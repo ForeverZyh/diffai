@@ -819,8 +819,9 @@ class ParSum(InferModule):
 
 
 class ReduceToZono(InferModule):
-    def init(self, in_shape, all_possible_sub, customRelu=None, only_train=False, **kargs):
+    def init(self, in_shape, all_possible_sub, delta, customRelu=None, only_train=False, **kargs):
         self.all_possible_sub = all_possible_sub
+        self.delta = delta
         self.customRelu = customRelu
         self.only_train = only_train
         self.in_shape = in_shape
@@ -837,7 +838,7 @@ class ReduceToZono(InferModule):
                 lower = x.min(1)[0]
                 # print(lower.size())
                 upper = x.max(1)[0]
-                return ai.HybridZonotope((lower + upper) / 2, (upper - lower) / 2, None)
+                return ai.HybridZonotope((lower + upper) / 2, (upper - lower) / 2 * self.delta, None)
             else:  # if it is in Point() shape
                 return x
 
