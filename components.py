@@ -180,26 +180,41 @@ class EmbeddingWithSub(InferModule):
         self.vocab = vocab
         self.dim = dim
         self.in_shape = in_shape
-        self.all_possible_sub = in_shape[0] * 2 - 2 + 1
         self.embed = nn.Embedding(vocab, dim)
+
+        subs = [None] * self.in_shape[0]
+        all_set = self.in_shape[0] * 2 - 2
+        for i in range(len(subs)):
+            if i == 0:
+                subs[i] = [i + 1]
+            elif i < len(subs) - 1:
+                subs[i] = [i - 1, i + 1]
+            else:
+                subs[i] = [i - 1]
+        self.groups = []
+        while all_set > 0:
+            pre = -self.in_shape[0]
+            self.groups.append([])
+            for i in range(len(subs)):
+                if len(subs[i]) > 0:
+                    if i - pre >= 10:  # 10 here is the kernal size!
+                        pre = i
+                        self.groups[-1].append((i, subs[i][0]))
+                        subs[i] = subs[i][1:]
+                        all_set -= 1
+        print(len(self.groups))
 
         return [1, in_shape[0], dim]
 
     def forward(self, x, **kargs):
         if isinstance(x, ai.TaggedDomain):  # convert to Box (HybirdZonotope), if the input is Box
             x = x.center().vanillaTensorPart()
-            x = x.repeat((1, self.all_possible_sub))
-            for i in x:
-                for j in range(1, self.all_possible_sub):
-                    swap_id = j // 2
-                    if swap_id == 0:
-                        i[swap_id] = x[0][swap_id + 1]
-                    elif swap_id == self.in_shape[0] - 1:
-                        i[swap_id] = x[0][swap_id - 1]
-                    else:
-                        i[swap_id] = x[0][swap_id - 1 + (j % 2) * 2]
-            # every position has 2 options, except for the first and the last one. Also, it can remain the same.
-            # After which it becomes a batch * (max_length * 2 - 2 + 1) * max_length tensor
+            x = x.repeat((1, len(self.groups) + 1))
+            for (id, i) in enumerate(x):
+                if id == 0: continue
+                for p, q in self.groups[id - 1]:
+                    i[p] = q
+
             y = self.embed(x.long()).view(-1, 1, self.in_shape[0], self.dim)
             return y
         elif isinstance(x, torch.Tensor):  # convert to Point, if the input is Point
@@ -804,8 +819,8 @@ class ParSum(InferModule):
 
 
 class ReduceToZono(InferModule):
-    def init(self, in_shape, max_length, customRelu=None, only_train=False, **kargs):
-        self.all_possible_sub = max_length * 2 - 2 + 1
+    def init(self, in_shape, all_possible_sub, customRelu=None, only_train=False, **kargs):
+        self.all_possible_sub = all_possible_sub
         self.customRelu = customRelu
         self.only_train = only_train
         self.in_shape = in_shape
