@@ -217,12 +217,12 @@ class EmbeddingWithSub(InferModule):
                         i[j * self.in_shape[0] + p] = i[q]
 
             y = self.embed(x.long()).view(-1, 1, self.in_shape[0], self.dim)
-            for id in range(len(y)):
-                item_group_id = id % (len(self.groups) + 1)
-                item_id = id - item_group_id
-                if item_group_id == 0: continue
-                for p, q in self.groups[item_group_id - 1]:
-                    y[id][0][p] = y[id][0][p] * self.delta + (1 - self.delta) * y[item_id][0][p]
+            if self.delta != 1: 
+                for id in range(len(y)):
+                    item_group_id = id % (len(self.groups) + 1)
+                    item_id = id - item_group_id
+                    if item_group_id == 0: continue
+                    y[id] = y[id] * self.delta + (1 - self.delta) * y[item_id]
 
             return y
         elif isinstance(x, torch.Tensor):  # convert to Point, if the input is Point
