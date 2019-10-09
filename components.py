@@ -210,10 +210,10 @@ class EmbeddingWithSub(InferModule):
         if isinstance(x, ai.TaggedDomain):  # convert to Box (HybirdZonotope), if the input is Box
             x = x.center().vanillaTensorPart()
             x = x.repeat((1, len(self.groups) + 1))
-            for (id, i) in enumerate(x):
-                if id == 0: continue
-                for p, q in self.groups[id - 1]:
-                    i[p] = q
+            for i in x:
+                for j in range(1, len(self.groups) + 1):
+                    for p, q in self.groups[j - 1]:
+                        i[j * self.in_shape[0] + p] = i[q]
 
             y = self.embed(x.long()).view(-1, 1, self.in_shape[0], self.dim)
             return y
