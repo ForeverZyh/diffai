@@ -208,7 +208,8 @@ class EmbeddingWithSub(InferModule):
         return [1, in_shape[0], dim]
 
     def forward(self, x, **kargs):
-        if isinstance(x, ai.TaggedDomain):  # convert to Box (HybirdZonotope), if the input is Box
+        if isinstance(x, ai.TaggedDomain) and not x.isPoint():  # convert to Box (HybirdZonotope), if the input is Box
+            tag = x.tag
             x = x.center().vanillaTensorPart()
             x = x.repeat((1, len(self.groups) + 1))
             for i in x:
@@ -224,10 +225,14 @@ class EmbeddingWithSub(InferModule):
                     if item_group_id == 0: continue
                     y[id] = y[id] * self.delta + (1 - self.delta) * y[item_id]
 
-            return y
-        elif isinstance(x, torch.Tensor):  # convert to Point, if the input is Point
+            return ai.TaggedDomain(y, tag)
+        elif isinstance(x, torch.Tensor): # it is a Point
             y = self.embed(x.long()).view(-1, 1, self.in_shape[0], self.dim)
             return y
+        elif isinstance(x, ai.TaggedDomain) and x.isPoint():  # convert to Point, if the input is Point
+            y = x.center().vanillaTensorPart()
+            y = self.embed(y.long()).view(-1, 1, self.in_shape[0], self.dim)
+            return ai.TaggedDomain(y, x.tag)
         elif isinstance(x, ai.ListDomain):
             return ai.ListDomain([self.forward(ai) for ai in x.al])
         else:
@@ -835,19 +840,26 @@ class ReduceToZono(InferModule):
         return in_shape
 
     def forward(self, x, **kargs):
-        num_e = h.product(x.size())
-        view_num = self.all_possible_sub * h.product(self.in_shape)
-        if isinstance(x, ai.ListDomain):
-            return ai.ListDomain([self.forward(ai) for ai in x.al])
-        else:
-            if num_e >= view_num and num_e % view_num == 0:  # convert to Box (HybirdZonotope)
+        def get_reduced(x):
+            num_e = h.product(x.size())
+            view_num = self.all_possible_sub * h.product(self.in_shape)
+            if num_e >= view_num and num_e % view_num == 0: # convert to Box (HybirdZonotope)
                 x = x.view(-1, self.all_possible_sub, *self.in_shape)
                 lower = x.min(1)[0]
-                # print(lower.size())
                 upper = x.max(1)[0]
-                return ai.HybridZonotope((lower + upper) / 2, (upper - lower) / 2, None)
-            else:  # if it is in Point() shape
+                return ai.HybridZonotope((lower + upper) / 2,(upper - lower) / 2, None)
+            else: # if it is a Point()
                 return x
+
+        if isinstance(x, ai.ListDomain):
+            return ai.ListDomain([self.forward(ai) for ai in x.al])
+        elif isinstance(x, torch.Tensor):
+            return get_reduced(x)
+        elif isinstance(x, ai.TaggedDomain):
+            y = x.center().vanillaTensorPart()
+            return ai.TaggedDomain(get_reduced(y), x.tag)
+        else:
+            raise NotImplementedError()
 
     def neuronCount(self):
         return 0
