@@ -253,9 +253,9 @@ def train(epoch, models):
     for model in models:
         model.train()
         if epoch > 5 and isinstance(model.ty, goals.DList):
-            for a in model.ty.al:
+            for (i, a) in enumerate(model.ty.al):
                 if isinstance(a[0], goals.Box):
-                    a[1] = min(a[1] + 0.05, 0.25)
+                    model.ty.al[i] = (a[0], Const(min(a[1].getVal() + 0.05, 0.25)))
 
     for batch_idx, (data, target) in enumerate(train_loader):
         total_batches_seen += 1
