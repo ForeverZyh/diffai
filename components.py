@@ -216,33 +216,33 @@ class EmbeddingWithSub(InferModule):
     def forward(self, x, **kargs):
         def LabeledDomain(x):
             xc = x.center()
-            if x.label == "Split_every_10":
+            if x.label == "Split_every_11":
+                every = 11
                 y = self.embed(xc.long()).view(-1, 1, self.in_shape[0], self.dim)
-                y_delta = torch.zeros(y.size())
-                if np.random.rand() < 0.5:  # swap with their left
-                    y_delta[:, :, 1:, :] = y[:, :, :-1, :]
-                else:  # with their right
-                    y_delta[:, :, :-1, :] = y[:, :, 1:, :]
-                ei = torch.zeros((xc.size()[-1] // 10, *y.size()))
-                offset = np.random.randint(0, 10)
-                for i in range(offset, xc.size()[1], 10):
-                    tmp = y[:, :, i, :] - y_delta[:, :, i, :]
-                    y[:, :, i, :] = (y[:, :, i, :] + y_delta[:, :, i, :]) / 2
-                    ei[i // 10, :, :, i, :] = tmp
+                y_ls_1 = y.clone()
+                y_ls_1[:, :, :-1, :] = y[:, :, 1:, :]
+                y_rs_1 = y.clone()
+                y_rs_1[:, :, 1:, :] = y[:, :, :-1, :]
+                offset = np.random.randint(0, every)
+                ei = torch.zeros((len(range(offset, xc.size()[-1] - 1, every)), *y.size()))
+                for i in range(offset, xc.size()[-1] - 1, every):
+                    ei[i // every, :, :, i, :] = y[:, :, i, :] - y[:, :, i + 1, :] / 2
+                    ei[i // every, :, :, i + 1, :] = y[:, :, i + 1, :] + y[:, :, i, :] / 2
+                    y[:, :, i, :], y[:, :, i + 1, :] = y[:, :, i + 1, :] / 2, y[:, :, i, :] / 2
                 return ai.HybridZonotope(y, None, ei)
-            elif x.label == "Split_sequential_10":
+            elif x.label == "Split_sequential_20":
+                sequential = 20
                 y = self.embed(xc.long()).view(-1, 1, self.in_shape[0], self.dim)
-                y_delta = torch.zeros(y.size())
-                if np.random.rand() < 0.5:  # swap with their left
-                    y_delta[:, :, 1:, :] = y[:, :, :-1, :]
-                else:  # with their right
-                    y_delta[:, :, :-1, :] = y[:, :, 1:, :]
-                ei = torch.zeros((xc.size()[-1] // 10, *y.size()))
-                start = np.random.randint(0, xc.size()[-1] // 10)
-                for i in range(start * 10, start * 10 + 10):
-                    tmp = y[:, :, i, :] - y_delta[:, :, i, :]
-                    y[:, :, i, :] = (y[:, :, i, :] + y_delta[:, :, i, :]) / 2
-                    ei[i - start * 10, :, :, i, :] = tmp
+                y_ls_1 = y.clone()
+                y_ls_1[:, :, :-1, :] = y[:, :, 1:, :]
+                y_rs_1 = y.clone()
+                y_rs_1[:, :, 1:, :] = y[:, :, :-1, :]
+                ei = torch.zeros((sequential - 1, *y.size()))
+                start = np.random.randint(0, xc.size()[-1] - sequential + 1)
+                for i in range(start, start + sequential - 1):
+                    ei[i - start, :, :, i, :] = y[:, :, i, :] - y[:, :, i + 1, :] / 2
+                    ei[i - start, :, :, i + 1, :] = y[:, :, i + 1, :] + y[:, :, i, :] / 2
+                    y[:, :, i, :], y[:, :, i + 1, :] = y[:, :, i + 1, :] / 2, y[:, :, i, :] / 2
                 return ai.HybridZonotope(y, None, ei)
             elif x.label == "Dataaug":
                 swaps = np.random.randint(0, len(self.swaps), xc.size()[0])
