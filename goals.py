@@ -527,3 +527,29 @@ class HRand(WrapDom):
 
     def __str__(self):
         return "HRand(%s, domain = %s)" % (str(self.num_correlated), str(self.a))
+
+
+class Merge(object):
+    Domain = ai.ListMergeDomain
+
+    def __init__(self, *al):
+        self.al = [eval(a) if type(a) is str else a for a in al]
+
+    def box(self, *args, **kargs):
+        return self.Domain([a.box(*args, **kargs) for a in self.al])
+
+    def __str__(self):
+        return "Merge(%s)" % h.sumStr("(" + str(a) + ")" for a in self.al)
+
+
+class C(object):
+    def __init__(self, label):
+        self.label = label
+        self.Domain = ai.LabeledDomain(label)
+
+    def __str__(self):
+        return self.label
+
+    def box(self, original, **kargs):
+        self.Domain.box(original)
+        return self.Domain

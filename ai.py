@@ -1062,3 +1062,43 @@ class TaggedDomain(object):
 
     def merge(self, other, ref = None):
         return TaggedDomain(self.a.merge(other.a, ref = None if ref is None else ref.a), self.tag)
+
+
+class ListMergeDomain(ListDomain):
+    def __init__(self, al, *args, **kargs):
+        super(ListMergeDomain, self).__init__(al, args, kargs)
+
+    def isSafe(self, target):
+        assert len(self.al) > 0
+        od, _ = torch.min(h.preDomRes(self.al[0], target).lb(), 1)
+        for a in self.al[1:]:
+            od1, _ = torch.min(h.preDomRes(a, target).lb(), 1)
+            od = torch.max(od, od1)
+
+        return od.gt(0.0).long()
+
+    def labels(self):
+        raise NotImplementedError()
+
+    def loss(self, target):
+        assert len(self.al) > 0
+        r = -h.preDomRes(self.al[0], target).lb()
+        for a in self.al[1:]:
+            r1 = -h.preDomRes(a, target).lb()
+            r = torch.max(r, r1)
+
+        return F.softplus(r.max(1)[0])
+
+
+class LabeledDomain(object):
+    def __init__(self, label):
+        self.label = label
+
+    def box(self, o):
+        self.o = o
+
+    def to_dtype(self):
+        return self
+
+    def center(self):
+        return self.o

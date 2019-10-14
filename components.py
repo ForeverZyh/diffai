@@ -3,6 +3,7 @@ import torch.nn.functional as F
 import torch.nn as nn
 from torch.distributions import multinomial, categorical
 import torch.optim as optim
+import numpy as np
 
 import math
 
@@ -184,14 +185,19 @@ class EmbeddingWithSub(InferModule):
         self.embed = nn.Embedding(vocab, dim)
 
         subs = [None] * self.in_shape[0]
+        self.swaps = []
         all_set = self.in_shape[0] * 2 - 2
         for i in range(len(subs)):
             if i == 0:
                 subs[i] = [i + 1]
+                self.swaps.append([i, i + 1])
             elif i < len(subs) - 1:
                 subs[i] = [i - 1, i + 1]
+                self.swaps.append([i, i - 1])
+                self.swaps.append([i, i + 1])
             else:
                 subs[i] = [i - 1]
+                self.swaps.append([i, i - 1])
         self.groups = []
         while all_set > 0:
             pre = -self.in_shape[0]
@@ -208,7 +214,52 @@ class EmbeddingWithSub(InferModule):
         return [1, in_shape[0], dim]
 
     def forward(self, x, **kargs):
-        if isinstance(x, ai.TaggedDomain) and not x.isPoint():  # convert to Box (HybirdZonotope), if the input is Box
+        def LabeledDomain(x):
+            xc = x.center()
+            if x.label == "Split_every_10":
+                y = self.embed(xc.long()).view(-1, 1, self.in_shape[0], self.dim)
+                y_delta = torch.zeros(y.size())
+                if np.random.rand() < 0.5:  # swap with their left
+                    y_delta[:, :, 1:, :] = y[:, :, :-1, :]
+                else:  # with their right
+                    y_delta[:, :, :-1, :] = y[:, :, 1:, :]
+                ei = torch.zeros((xc.size()[-1] // 10, *y.size()))
+                offset = np.random.randint(0, 10)
+                for i in range(offset, xc.size()[1], 10):
+                    tmp = y[:, :, i, :] - y_delta[:, :, i, :]
+                    y[:, :, i, :] = (y[:, :, i, :] + y_delta[:, :, i, :]) / 2
+                    ei[i // 10, :, :, i, :] = tmp
+                return ai.HybridZonotope(y, None, ei)
+            elif x.label == "Split_sequential_10":
+                y = self.embed(xc.long()).view(-1, 1, self.in_shape[0], self.dim)
+                y_delta = torch.zeros(y.size())
+                if np.random.rand() < 0.5:  # swap with their left
+                    y_delta[:, :, 1:, :] = y[:, :, :-1, :]
+                else:  # with their right
+                    y_delta[:, :, :-1, :] = y[:, :, 1:, :]
+                ei = torch.zeros((xc.size()[-1] // 10, *y.size()))
+                start = np.random.randint(0, xc.size()[-1] // 10)
+                for i in range(start * 10, start * 10 + 10):
+                    tmp = y[:, :, i, :] - y_delta[:, :, i, :]
+                    y[:, :, i, :] = (y[:, :, i, :] + y_delta[:, :, i, :]) / 2
+                    ei[i - start * 10, :, :, i, :] = tmp
+                return ai.HybridZonotope(y, None, ei)
+            elif x.label == "Dataaug":
+                swaps = np.random.randint(0, len(self.swaps), xc.size()[0])
+                for (swap, x_) in zip(swaps, xc):
+                    p, q = self.swaps[swap]
+                    x_[p], x_[q] = x_[q], x_[p]
+
+                return self.embed(xc.long()).view(-1, 1, self.in_shape[0], self.dim)
+            else:
+                raise NotImplementedError()
+
+        if isinstance(x, ai.LabeledDomain):
+            return LabeledDomain(x)
+        elif isinstance(x, ai.TaggedDomain) and isinstance(x.a, ai.LabeledDomain):
+            x.a = LabeledDomain(x.a)
+            return x
+        elif isinstance(x, ai.TaggedDomain) and not x.isPoint():  # convert to Box (HybirdZonotope), if the input is Box
             tag = x.tag
             x = x.center().vanillaTensorPart()
             x = x.repeat((1, len(self.groups) + 1))
@@ -218,7 +269,7 @@ class EmbeddingWithSub(InferModule):
                         i[j * self.in_shape[0] + p] = i[q]
 
             y = self.embed(x.long()).view(-1, 1, self.in_shape[0], self.dim)
-            if self.delta != 1: 
+            if self.delta != 1:
                 for id in range(len(y)):
                     item_group_id = id % (len(self.groups) + 1)
                     item_id = id - item_group_id
@@ -226,7 +277,7 @@ class EmbeddingWithSub(InferModule):
                     y[id] = y[id] * self.delta + (1 - self.delta) * y[item_id]
 
             return ai.TaggedDomain(y, tag)
-        elif isinstance(x, torch.Tensor): # it is a Point
+        elif isinstance(x, torch.Tensor):  # it is a Point
             y = self.embed(x.long()).view(-1, 1, self.in_shape[0], self.dim)
             return y
         elif isinstance(x, ai.TaggedDomain) and x.isPoint():  # convert to Point, if the input is Point
@@ -234,7 +285,20 @@ class EmbeddingWithSub(InferModule):
             y = self.embed(y.long()).view(-1, 1, self.in_shape[0], self.dim)
             return ai.TaggedDomain(y, x.tag)
         elif isinstance(x, ai.ListDomain):
-            return ai.ListDomain([self.forward(ai) for ai in x.al])
+            if isinstance(x.al[0], ai.LabeledDomain):
+                xc = x.center()
+                y = self.embed(xc.long()).view(-1, 1, self.in_shape[0], self.dim)
+                A = torch.sum(y, dim=(1, 2, 3))
+                ave = A / (self.in_shape[0] * self.dim)
+                y_ls_1 = y.clone()
+                y_ls_1[:, :, :-1, :] = y[:, :, 1:, :]
+                y_rs_1 = y.clone()
+                y_rs_1[:, :, 1:, :] = y[:, :, :-1, :]
+                lower = torch.min(torch.min(y, y_ls_1), y_rs_1)
+                upper = torch.max(torch.max(y, y_ls_1), y_rs_1)
+                return ai.ListDomain([self.forward(ai, y=y, A=A, ave=ave, lower=lower, upper=upper) for ai in x.al])
+            else:
+                return ai.ListDomain([self.forward(ai) for ai in x.al])
         else:
             raise NotImplementedError()
 
@@ -843,21 +907,25 @@ class ReduceToZono(InferModule):
         def get_reduced(x):
             num_e = h.product(x.size())
             view_num = self.all_possible_sub * h.product(self.in_shape)
-            if num_e >= view_num and num_e % view_num == 0: # convert to Box (HybirdZonotope)
+            if num_e >= view_num and num_e % view_num == 0:  # convert to Box (HybirdZonotope)
                 x = x.view(-1, self.all_possible_sub, *self.in_shape)
                 lower = x.min(1)[0]
                 upper = x.max(1)[0]
-                return ai.HybridZonotope((lower + upper) / 2,(upper - lower) / 2, None)
-            else: # if it is a Point()
+                return ai.HybridZonotope((lower + upper) / 2, (upper - lower) / 2, None)
+            else:  # if it is a Point()
                 return x
 
         if isinstance(x, ai.ListDomain):
             return ai.ListDomain([self.forward(ai) for ai in x.al])
         elif isinstance(x, torch.Tensor):
             return get_reduced(x)
+        elif isinstance(x, ai.TaggedDomain) and isinstance(x.a, ai.HybridZonotope):
+            return x
         elif isinstance(x, ai.TaggedDomain):
             y = x.center().vanillaTensorPart()
             return ai.TaggedDomain(get_reduced(y), x.tag)
+        elif isinstance(x, ai.HybridZonotope):
+            return x
         else:
             raise NotImplementedError()
 
