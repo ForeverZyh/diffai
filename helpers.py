@@ -240,7 +240,7 @@ def loadDataset(dataset, batch_size, train, transform=True, delta=0):
             for i in X:
                 for j in range(length - 1):
                     i[j * length + j], i[j * length + j + 1] = i[j * length + j + 1], i[j * length + j]
-            y = np.reshape(np.tile(np.expand_dims(y, 0), (1, length)), -1)
+            y = np.reshape(np.tile(np.expand_dims(y, 1), (1, length)), -1)
             X = np.reshape(X, (-1, length))
         x = torch.from_numpy(X)
         train_set = torch.utils.data.TensorDataset(x, torch.from_numpy(y))
