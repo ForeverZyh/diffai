@@ -185,7 +185,7 @@ def chunks(l, n):
         yield l[i:i + n]
 
 
-def loadDataset(dataset, batch_size, train, transform=True):
+def loadDataset(dataset, batch_size, train, transform=True, delta=0):
     oargs = {}
     if dataset in ["MNIST", "CIFAR10", "CIFAR100", "FashionMNIST", "PhotoTour"]:
         oargs['train'] = train
@@ -229,9 +229,19 @@ def loadDataset(dataset, batch_size, train, transform=True):
                 transforms.RandomHorizontalFlip(),
                 normalize,
             ]))
-    elif dataset in ["AG"]:
-        X = np.load("./dataset/AG/X_%s.npy" % ('train' if train else 'test'))
-        y = np.load("./dataset/AG/y_%s.npy" % ('train' if train else 'test'))
+    elif dataset in ["AG", "SST"]:
+        X = np.load("./dataset/%s/X_%s.npy" % (dataset, 'train' if train else 'test'))
+        y = np.load("./dataset/%s/y_%s.npy" % (dataset, 'train' if train else 'test'))
+        if not train and delta > 0:
+            if delta > 1:
+                raise NotImplementedError()
+            length = X.shape[1]
+            X = np.tile(X, (1, length))
+            for i in X:
+                for j in range(length - 1):
+                    i[j * length + j], i[j * length + j + 1] = i[j * length + j + 1], i[j * length + j]
+            y = np.reshape(np.tile(np.expand_dims(y, 0), (1, length)), -1)
+            X = np.reshape(X, (-1, length))
         x = torch.from_numpy(X)
         train_set = torch.utils.data.TensorDataset(x, torch.from_numpy(y))
     else:

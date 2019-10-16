@@ -215,6 +215,7 @@ parser.add_argument('--dont-write', type=h.str2bool, nargs='?', const=True, defa
 parser.add_argument('--write-first', type=h.str2bool, nargs='?', const=True, default=False,
                     help='write the initial net.  Useful for comparing algorithms, a pain for testing.')
 parser.add_argument('--test-size', type=int, default=2000, help='number of examples to test with')
+parser.add_argument('--test-swap-delta', type=int, default=0, help='number of swaps in each sentence')
 
 parser.add_argument('-r', '--regularize', type=float, default=None, help='use regularization')
 
@@ -233,7 +234,7 @@ else:
     torch.manual_seed(args.seed)
 
 train_loader = h.loadDataset(args.dataset, args.batch_size, True, False)
-test_loader = h.loadDataset(args.dataset, args.test_batch_size, False, False)
+test_loader = h.loadDataset(args.dataset, args.test_batch_size, False, False, args.test_swap_delta)
 
 input_dims = train_loader.dataset[0][0].size()
 num_classes = (int(max(getattr(train_loader.dataset,
