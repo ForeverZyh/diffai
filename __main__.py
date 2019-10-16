@@ -234,7 +234,7 @@ else:
     torch.manual_seed(args.seed)
 
 train_loader = h.loadDataset(args.dataset, args.batch_size, True, False)
-test_loader = h.loadDataset(args.dataset, args.test_batch_size, False, False, args.test_swap_delta)
+test_loader = h.loadDataset(args.dataset, args.test_batch_size, False, False)
 
 input_dims = train_loader.dataset[0][0].size()
 num_classes = (int(max(getattr(train_loader.dataset,
@@ -349,6 +349,16 @@ def test(models, epoch, f=None):
             saved_data_target += list(zip(list(data), list(target)))
 
         num_its += data.size()[0]
+        if args.test_swap_delta > 0:
+            if args.test_swap_delta > 1:
+                raise NotImplementedError()
+            length = data.size()[1]
+            data = data.repeat(1, length)
+            for i in data:
+                for j in range(length - 1):
+                    i[j * length + j], i[j * length + j + 1] = i[j * length + j + 1], i[j * length + j]
+            target = (target.view(-1, 1).repeat(1, length)).view(-1)
+            data = data.view(-1, length)
         if h.use_cuda:
             data, target = data.cuda().to_dtype(), target.cuda()
 
