@@ -348,6 +348,7 @@ def test(models, epoch, f=None):
         if num_tests == 1:
             saved_data_target += list(zip(list(data), list(target)))
 
+        num_its += data.size()[0]
         if args.test_swap_delta > 0:
             if args.test_swap_delta > 1:
                 raise NotImplementedError()
@@ -358,8 +359,7 @@ def test(models, epoch, f=None):
                     i[j * length + j], i[j * length + j + 1] = i[j * length + j + 1], i[j * length + j]
             target = (target.view(-1, 1).repeat(1, length)).view(-1)
             data = data.view(-1, length)
-            
-        num_its += data.size()[0]
+
         if h.use_cuda:
             data, target = data.cuda().to_dtype(), target.cuda()
 
@@ -387,8 +387,22 @@ def test(models, epoch, f=None):
                     if m.model.net.neuronCount() < 5000 or stat.domain in SYMETRIC_DOMAINS:
                         calcData(data, target)
                     else:
-                        for d, t in zip(data, target):
-                            calcData(d.unsqueeze(0), t.unsqueeze(0))
+                        if args.test_swap_delta > 0:
+                            length = data.size()[1]
+                            pre_stat = copy.deepcopy(stat)
+                            for i, (d, t) in enumerate(zip(data, target)):
+                                calcData(d.unsqueeze(0), t.unsqueeze(0))
+                                if (i + 1) % length == 0:
+                                    d_proved = (stat.proved - pre_stat.proved) // length
+                                    d_safe = (stat.safe - pre_stat.safe) // length
+                                    d_width = (stat.width - pre_stat.width) / length
+                                    stat.proved = pre_stat.proved + d_proved
+                                    stat.safe = pre_stat.safe + d_safe
+                                    stat.width = pre_stat.width + d_width
+                                    pre_stat = copy.deepcopy(stat)
+                        else:
+                            for d, t in zip(data, target):
+                                calcData(d.unsqueeze(0), t.unsqueeze(0))
                 stat.time += timer.getUnitTime()
 
     l = num_its  # len(test_loader.dataset)
