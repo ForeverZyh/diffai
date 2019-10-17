@@ -15,6 +15,7 @@ from torchvision import datasets
 from torch.utils.data import Dataset
 import decimal
 import torch.onnx
+import numpy as np
 
 import inspect
 from inspect import getargspec
@@ -349,14 +350,16 @@ def test(models, epoch, f=None):
             saved_data_target += list(zip(list(data), list(target)))
 
         num_its += data.size()[0]
+        if num_its % 100 == 0:
+            print(num_its, model_stats[0].domains[0].safe * 100.0 / num_its)
         if args.test_swap_delta > 0:
-            if args.test_swap_delta > 1:
-                raise NotImplementedError()
             length = data.size()[1]
             data = data.repeat(1, length)
             for i in data:
                 for j in range(length - 1):
-                    i[j * length + j], i[j * length + j + 1] = i[j * length + j + 1], i[j * length + j]
+                    for _ in range(args.test_swap_delta):
+                        t = np.random.randint(0, length - 1) if args.test_swap_delta == 1 else j
+                        i[j * length + t], i[j * length + t + 1] = i[j * length + t + 1], i[j * length + t]
             target = (target.view(-1, 1).repeat(1, length)).view(-1)
             data = data.view(-1, length)
 
