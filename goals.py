@@ -41,12 +41,18 @@ class WrapDom(object):
 class DList(object):
     Domain = ai.ListDomain
     class MLoss():
-        def __init__(self, aw):
+        def __init__(self, aw, goal=None):
             self.aw = aw
-        def loss(self, dom, *args, lr = 1, **kargs):
+            self.goal = goal
+
+        def loss(self, dom, *args, lr=1, **kargs):
             if self.aw <= 0.0:
                 return 0
-            return self.aw * dom.loss(*args, lr = lr * self.aw, **kargs)
+            try:
+                loss = getattr(self.goal, "loss")
+                return self.aw * loss(dom, *args, lr=lr * self.aw, **kargs)
+            except:
+                return self.aw * dom.loss(*args, lr=lr * self.aw, **kargs)
 
     def __init__(self, *al):
         if len(al) == 0:
@@ -59,7 +65,8 @@ class DList(object):
 
     def box(self, *args, **kargs):
         m = self.getDiv(**kargs)
-        return self.Domain(ai.TaggedDomain(a.box(*args, **kargs), DList.MLoss(aw.getVal(**kargs) * m)) for a,aw in self.al)
+        return self.Domain(
+            ai.TaggedDomain(a.box(*args, **kargs), DList.MLoss(aw.getVal(**kargs) * m, a)) for a, aw in self.al)
 
     def boxBetween(self, *args, **kargs):
         
