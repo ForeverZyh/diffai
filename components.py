@@ -256,11 +256,9 @@ class EmbeddingWithSub(InferModule):
 
         if isinstance(x, ai.LabeledDomain):
             return LabeledDomain(x)
-        elif isinstance(x, ai.TaggedDomain) and isinstance(x.a, ai.LabeledDomain):
-            x.a = LabeledDomain(x.a)
-            return x
-        elif isinstance(x, ai.TaggedDomain) and not x.isPoint():  # convert to Box (HybirdZonotope), if the input is Box
-            tag = x.tag
+        elif isinstance(x, ai.TaggedDomain):
+            return ai.TaggedDomain(self.forward(x.a), x.tag)
+        elif not x.isPoint():  # convert to Box (HybirdZonotope), if the input is Box
             x = x.center().vanillaTensorPart()
             x = x.repeat((1, len(self.groups) + 1))
             for i in x:
@@ -276,14 +274,15 @@ class EmbeddingWithSub(InferModule):
                     if item_group_id == 0: continue
                     y[id] = y[id] * self.delta + (1 - self.delta) * y[item_id]
 
-            return ai.TaggedDomain(y, tag)
+            return y
         elif isinstance(x, torch.Tensor):  # it is a Point
             y = self.embed(x.long()).view(-1, 1, self.in_shape[0], self.dim)
             return y
-        elif isinstance(x, ai.TaggedDomain) and x.isPoint():  # convert to Point, if the input is Point
+        elif x.isPoint():  # convert to Point, if the input is Point
+            assert False
             y = x.center().vanillaTensorPart()
             y = self.embed(y.long()).view(-1, 1, self.in_shape[0], self.dim)
-            return ai.TaggedDomain(y, x.tag)
+            return y
         elif isinstance(x, ai.ListDomain):
             if isinstance(x.al[0], ai.LabeledDomain):
                 xc = x.center()
@@ -917,13 +916,10 @@ class ReduceToZono(InferModule):
 
         if isinstance(x, ai.ListDomain):
             return ai.ListDomain([self.forward(ai) for ai in x.al])
+        elif isinstance(x, ai.TaggedDomain):
+            return ai.TaggedDomain(self.forward(x.a), x.tag)
         elif isinstance(x, torch.Tensor):
             return get_reduced(x)
-        elif isinstance(x, ai.TaggedDomain) and isinstance(x.a, ai.HybridZonotope):
-            return x
-        elif isinstance(x, ai.TaggedDomain):
-            y = x.center().vanillaTensorPart()
-            return ai.TaggedDomain(get_reduced(y), x.tag)
         elif isinstance(x, ai.HybridZonotope):
             return x
         else:
