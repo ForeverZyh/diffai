@@ -11,10 +11,12 @@ try:
     from . import helpers as h
     from . import ai
     from . import scheduling as S
+    from . import goals as g
 except:
     import helpers as h
     import ai
     import scheduling as S
+    import goals as g
 
 import math
 import abc
@@ -240,12 +242,13 @@ class EmbeddingWithSub(InferModule):
                 return ai.HybridZonotope((upper + lower) / 2, (upper - lower) / 2, None)
             elif x.label == "2Points":
                 ys = get_swaped(2)
-                for i in range(10):
-                    y1 = get_swaped(2)
-                    for j in range(2):
-                        ys[j] = torch.cat([ys[j], y1[j]], 0)
-                # print(ys[0].size(), ys[1].size(0))
-                return ai.HybridZonotope((ys[0] + ys[1]) / 2, None, torch.unsqueeze((ys[0] - ys[1]) / 2, 0))
+                # for i in range(10):
+                #     y1 = get_swaped(2)
+                #     for j in range(2):
+                #         ys[j] = torch.cat([ys[j], y1[j]], 0)
+                # # print(ys[0].size(), ys[1].size(0))
+                return ai.TaggedDomain(
+                    ai.HybridZonotope((ys[0] + ys[1]) / 2, None, torch.unsqueeze((ys[0] - ys[1]) / 2, 0)), g.HBox(0))
             elif x.label == "Dataaug":
                 swaps = np.random.randint(0, len(self.swaps), xc.size()[0])
                 for (swap, x_) in zip(swaps, xc):
