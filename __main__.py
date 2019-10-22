@@ -219,8 +219,11 @@ parser.add_argument('--test-size', type=int, default=2000, help='number of examp
 parser.add_argument('--test-swap-delta', type=int, default=0, help='number of swaps in each sentence')
 
 parser.add_argument('-r', '--regularize', type=float, default=None, help='use regularization')
+parser.add_argument("--gpu_id", type=int, default=None, help="specify gpu id, None for all")
 
 args = parser.parse_args()
+if args.gpu_id is not None:
+    os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_id
 
 largest_domain = max([len(h.catStrs(d)) for d in (args.domain)])
 largest_test_domain = max([len(h.catStrs(d)) for d in (args.test_domain)])
