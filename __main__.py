@@ -220,6 +220,7 @@ parser.add_argument('--test-swap-delta', type=int, default=0, help='number of sw
 
 parser.add_argument('-r', '--regularize', type=float, default=None, help='use regularization')
 parser.add_argument("--gpu_id", type=str, default=None, help="specify gpu id, None for all")
+parser.add_argument("--decay-fir", type=bool, default=False, help="decay the first Mix domain")
 
 args = parser.parse_args()
 if args.gpu_id is not None:
@@ -257,12 +258,13 @@ def train(epoch, models):
 
     for model in models:
         model.train()
-        if epoch > 1 and isinstance(model.ty, goals.DList):
-            for (i, a) in enumerate(model.ty.al):
-                if isinstance(a[0], goals.Box):
-                    model.ty.al[i] = (a[0], Const(min(a[1].getVal() + 0.03, 0.75)))
-                else:
-                    model.ty.al[i] = (a[0], Const(max(a[1].getVal() - 0.03, 0.25)))
+        if args.decay_fir:
+            if epoch > 1 and isinstance(model.ty, goals.DList) and len(model.ty.al) == 2:
+                for (i, a) in enumerate(model.ty.al):
+                    if i == 0:
+                        model.ty.al[i] = (a[0], Const(min(a[1].getVal() + 0.03, 0.75)))
+                    else:
+                        model.ty.al[i] = (a[0], Const(max(a[1].getVal() - 0.03, 0.25)))
 
     for batch_idx, (data, target) in enumerate(train_loader):
         total_batches_seen += 1
@@ -363,8 +365,8 @@ def test(models, epoch, f=None):
             for i in data:
                 for j in range(length - 1):
                     for _ in range(args.test_swap_delta):
-                        #t = np.random.randint(0, length) if args.test_swap_delta > 1 else j
-                        #i[j * length + t] = i[j * length + t - 1] if (np.random.rand() < 0.5 or t == length - 1) and t != 0 else i[j * length + t + 1]
+                        # t = np.random.randint(0, length) if args.test_swap_delta > 1 else j
+                        # i[j * length + t] = i[j * length + t - 1] if (np.random.rand() < 0.5 or t == length - 1) and t != 0 else i[j * length + t + 1]
                         t = np.random.randint(0, length - 1) if args.test_swap_delta > 1 else j
                         i[j * length + t], i[j * length + t + 1] = i[j * length + t + 1], i[j * length + t]
             target = (target.view(-1, 1).repeat(1, length)).view(-1)
