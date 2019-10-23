@@ -360,9 +360,9 @@ def test(models, epoch, f=None):
             for i in data:
                 for j in range(length - 1):
                     for _ in range(args.test_swap_delta):
-                        #t = np.random.randint(0, length) if args.test_swap_delta == 1 else j
+                        #t = np.random.randint(0, length) if args.test_swap_delta > 1 else j
                         #i[j * length + t] = i[j * length + t - 1] if (np.random.rand() < 0.5 or t == length - 1) and t != 0 else i[j * length + t + 1]
-                        t = np.random.randint(0, length - 1) if args.test_swap_delta == 1 else j
+                        t = np.random.randint(0, length - 1) if args.test_swap_delta > 1 else j
                         i[j * length + t], i[j * length + t + 1] = i[j * length + t + 1], i[j * length + t]
             target = (target.view(-1, 1).repeat(1, length)).view(-1)
             data = data.view(-1, length)
