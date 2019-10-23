@@ -240,22 +240,34 @@ class EmbeddingWithSub(InferModule):
                 lower = torch.min(torch.min(y, y_ls_1), y_rs_1)
                 upper = torch.max(torch.max(y, y_ls_1), y_rs_1)
                 return ai.HybridZonotope((upper + lower) / 2, (upper - lower) / 2, None)
-            elif x.label == "2Points":
-                ys = get_swaped(2)
-                # for i in range(10):
-                #     y1 = get_swaped(2)
-                #     for j in range(2):
-                #         ys[j] = torch.cat([ys[j], y1[j]], 0)
-                # # print(ys[0].size(), ys[1].size(0))
+            # elif x.label == "2Points":
+            #     ys = get_swaped(2)
+            #     # for i in range(10):
+            #     #     y1 = get_swaped(2)
+            #     #     for j in range(2):
+            #     #         ys[j] = torch.cat([ys[j], y1[j]], 0)
+            #     # # print(ys[0].size(), ys[1].size(0))
+            #     return ai.TaggedDomain(
+            #         ai.HybridZonotope((ys[0] + ys[1]) / 2, None, torch.unsqueeze((ys[0] - ys[1]) / 2, 0)), g.HBox(0))
+            # elif x.label == "3Points":
+            #     ys = get_swaped(3)
+            #     mid = (ys[0] + ys[1]) / 2
+            #     return ai.TaggedDomain(
+            #         ai.HybridZonotope((mid + ys[2]) / 2, None, torch.cat(
+            #             [torch.unsqueeze((ys[0] - ys[1]) / 2, 0), torch.unsqueeze((mid - ys[2]) / 2, 0)], 0)),
+            #         g.HBox(0))
+            elif x.label[-6:] == "Points":
+                d = int(x.label[:-6])
+                assert d > 1
+                ys = get_swaped(d)
+                mid = ys[0]
+                err = None
+                for i in range(1, d):
+                    err = torch.unsqueeze((mid - ys[i]) / 2, 0) if err is None else torch.cat([err, torch.unsqueeze((mid - ys[i]) / 2, 0)],
+                                                                          0)
+                    mid = (mid + ys[i]) / 2
                 return ai.TaggedDomain(
-                    ai.HybridZonotope((ys[0] + ys[1]) / 2, None, torch.unsqueeze((ys[0] - ys[1]) / 2, 0)), g.HBox(0))
-            elif x.label == "3Points":
-                ys = get_swaped(3)
-                mid = (ys[0] + ys[1]) / 2
-                return ai.TaggedDomain(
-                    ai.HybridZonotope((mid + ys[2]) / 2, None, torch.cat(
-                        [torch.unsqueeze((ys[0] - ys[1]) / 2, 0), torch.unsqueeze((mid - ys[2]) / 2, 0)], 0)),
-                    g.HBox(0))
+                    ai.HybridZonotope(mid, None, err), g.HBox(0))
             elif x.label == "Dataaug":
                 swaps = np.random.randint(0, len(self.swaps), xc.size()[0])
                 for (swap, x_) in zip(swaps, xc):
