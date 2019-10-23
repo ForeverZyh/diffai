@@ -249,6 +249,13 @@ class EmbeddingWithSub(InferModule):
                 # # print(ys[0].size(), ys[1].size(0))
                 return ai.TaggedDomain(
                     ai.HybridZonotope((ys[0] + ys[1]) / 2, None, torch.unsqueeze((ys[0] - ys[1]) / 2, 0)), g.HBox(0))
+            elif x.label == "3Points":
+                ys = get_swaped(3)
+                mid = (ys[0] + ys[1]) / 2
+                return ai.TaggedDomain(
+                    ai.HybridZonotope((mid + ys[2]) / 2, None, torch.cat(
+                        [torch.unsqueeze((ys[0] - ys[1]) / 2, 0), torch.unsqueeze((mid - ys[2]) / 2, 0)], 0)),
+                    g.HBox(0))
             elif x.label == "Dataaug":
                 swaps = np.random.randint(0, len(self.swaps), xc.size()[0])
                 for (swap, x_) in zip(swaps, xc):
