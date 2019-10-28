@@ -192,14 +192,14 @@ class EmbeddingWithSub(InferModule):
         for i in range(len(subs)):
             if i == 0:
                 subs[i] = [i + 1]
-                self.swaps.append([i, i + 1])
+                self.swaps.append([(i, i + 1)])
             elif i < len(subs) - 1:
                 subs[i] = [i - 1, i + 1]
-                self.swaps.append([i, i - 1])
-                self.swaps.append([i, i + 1])
+                self.swaps.append([(i, i - 1)])
+                self.swaps.append([(i, i + 1)])
             else:
                 subs[i] = [i - 1]
-                self.swaps.append([i, i - 1])
+                self.swaps.append([(i, i - 1)])
         self.groups = []
         while all_set > 0:
             pre = -self.in_shape[0]
@@ -224,8 +224,8 @@ class EmbeddingWithSub(InferModule):
                 ys = []
                 for i in range(d):
                     y1 = y.clone()
-                    p, q = self.swaps[t[i]]
-                    y1[:, :, p, :], y1[:, :, q, :] = y1[:, :, q, :], y1[:, :, p, :]
+                    for (p, q) in self.swaps[t[i]]:
+                        y1[:, :, p, :], y1[:, :, q, :] = y1[:, :, q, :], y1[:, :, p, :]
                     ys.append(y1)
                 return ys
 
@@ -258,7 +258,6 @@ class EmbeddingWithSub(InferModule):
             #         g.HBox(0))
             elif x.label[-6:] == "Points":
                 d = int(x.label[:-6])
-                assert d > 1
                 ys = get_swaped(d)
                 mid = ys[0]
                 err = None
@@ -271,7 +270,6 @@ class EmbeddingWithSub(InferModule):
                     ai.HybridZonotope(mid, None, err), g.HBox(0))
             elif x.label[-len("Points_Interval"):] == "Points_Interval":
                 d = int(x.label[:-len("Points_Interval")])
-                assert d > 1
                 ys = get_swaped(d)
                 lower = ys[0].clone()
                 upper = ys[0].clone()
@@ -280,13 +278,10 @@ class EmbeddingWithSub(InferModule):
                     upper = torch.max(upper, ys[i])
                 return ai.TaggedDomain(
                     ai.HybridZonotope((upper - lower) / 2, (lower + upper) / 2, None), g.HBox(0))
-            elif x.label == "Dataaug":
-                swaps = np.random.randint(0, len(self.swaps), xc.size()[0])
-                for (swap, x_) in zip(swaps, xc):
-                    p, q = self.swaps[swap]
-                    x_[p], x_[q] = x_[q], x_[p]
-
-                return self.embed(xc.long()).view(-1, 1, self.in_shape[0], self.dim)
+            elif x.label[-len("Points_Dataaug"):] == "Points_Dataaug":
+                d = int(x.label[:-len("Points_Dataaug")])
+                ys = get_swaped(d)
+                return ai.ListDomain([ai.TaggedDomain(y, g.DList.MLoss(1.0 / d)) for y in ys])
             else:
                 raise NotImplementedError()
 
