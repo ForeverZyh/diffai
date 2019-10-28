@@ -277,7 +277,7 @@ class EmbeddingWithSub(InferModule):
                     lower = torch.min(lower, ys[i])
                     upper = torch.max(upper, ys[i])
                 return ai.TaggedDomain(
-                    ai.HybridZonotope((upper - lower) / 2, (lower + upper) / 2, None), g.HBox(0))
+                    ai.HybridZonotope((upper + lower) / 2, (upper - lower) / 2, None), g.HBox(0))
             elif x.label[-len("Points_Dataaug"):] == "Points_Dataaug":
                 d = int(x.label[:-len("Points_Dataaug")])
                 ys = get_swaped(d)
