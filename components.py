@@ -258,6 +258,8 @@ class EmbeddingWithSub(InferModule):
             #         g.HBox(0))
             elif x.label[-6:] == "Points":
                 d = int(x.label[:-6])
+                if d == 1:
+                    return y
                 ys = get_swaped(d)
                 mid = ys[0]
                 err = None
@@ -268,6 +270,14 @@ class EmbeddingWithSub(InferModule):
                     mid = (mid + ys[i]) / 2
                 return ai.TaggedDomain(
                     ai.HybridZonotope(mid, None, err), g.HBox(0))
+            elif x.label[-len("Zonotope_Dataaug"):] == "Zonotope_Dataaug":
+                d = int(x.label[:-len("Zonotope_Dataaug")])
+                ret = []
+                for i in range(0, d, 3):
+                    t = min(3, d - i)
+                    x.label = str(t) + "Points"
+                    ret.append(ai.TaggedDomain(LabeledDomain(x), g.DList.MLoss(1.0 * t / d)))
+                return ai.ListDomain(ret)
             elif x.label[-len("Points_Interval"):] == "Points_Interval":
                 d = int(x.label[:-len("Points_Interval")])
                 ys = get_swaped(d)
