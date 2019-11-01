@@ -332,7 +332,7 @@ def train(epoch, models, decay=True):
                 val += loss.detach().item()
 
             loss = model.aiLoss(data, target, **vargs).mean(dim=0)
-            val_origin += loss
+            val_origin += loss.detach().item()
 
     return val_origin, val
 
@@ -668,9 +668,10 @@ with h.mopen(args.dont_write, os.path.join(out_dir, "log.txt"), "w") as f:
             elif epoch - last_best_origin > patience:
                 h.printBoth("Early stopping decay at epoch %d\n" % epoch, f=f)
                 decay = False
-            if val < best:
-                best = val
-                last_best = epoch
-            elif epoch - last_best > patience and not decay:
-                h.printBoth("Early stopping at epoch %d\n" % epoch, f=f)
-                break
+            if not decay:
+                if val < best:
+                    best = val
+                    last_best = epoch
+                elif epoch - last_best > patience:
+                    h.printBoth("Early stopping at epoch %d\n" % epoch, f=f)
+                    break
