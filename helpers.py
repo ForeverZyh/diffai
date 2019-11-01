@@ -185,7 +185,7 @@ def chunks(l, n):
         yield l[i:i + n]
 
 
-def loadDataset(dataset, batch_size, train, transform=True, delta=0):
+def loadDataset(dataset, batch_size, train, transform=True, val=False):
     oargs = {}
     if dataset in ["MNIST", "CIFAR10", "CIFAR100", "FashionMNIST", "PhotoTour"]:
         oargs['train'] = train
@@ -232,6 +232,13 @@ def loadDataset(dataset, batch_size, train, transform=True, delta=0):
     elif dataset in ["AG", "SST"]:
         X = np.load("./dataset/%s/X_%s.npy" % (dataset, 'train' if train else 'test'))
         y = np.load("./dataset/%s/y_%s.npy" % (dataset, 'train' if train else 'test'))
+        if val:
+            X = X[-1000:]
+            y = y[-1000:]
+        elif train:
+            X = X[:-1000]
+            y = y[:-1000]
+
         x = torch.from_numpy(X)
         train_set = torch.utils.data.TensorDataset(x, torch.from_numpy(y))
     else:

@@ -239,6 +239,7 @@ else:
     torch.manual_seed(args.seed)
 
 train_loader = h.loadDataset(args.dataset, args.batch_size, True, False)
+val_loader = h.loadDataset(args.dataset, args.batch_size, True, False, True)
 test_loader = h.loadDataset(args.dataset, args.test_batch_size, False, False)
 
 input_dims = train_loader.dataset[0][0].size()
@@ -253,13 +254,13 @@ vargs = vars(args)
 total_batches_seen = 0
 
 
-def train(epoch, models):
+def train(epoch, models, decay=True):
     global total_batches_seen
 
     for model in models:
         model.train()
         if args.decay_fir:
-            if epoch > 1 and isinstance(model.ty, goals.DList) and len(model.ty.al) == 2:
+            if epoch > 1 and isinstance(model.ty, goals.DList) and len(model.ty.al) == 2 and decay:
                 for (i, a) in enumerate(model.ty.al):
                     if i == 0:
                         model.ty.al[i] = (a[0], Const(min(a[1].getVal() + 0.03, 0.75)))
@@ -318,6 +319,22 @@ def train(epoch, models):
                     batch_idx * len(data), len(train_loader.dataset), 100. * batch_idx / len(train_loader),
                     model.speed,
                     lossy))
+
+    val = 0
+    val_origin = 0
+    for batch_idx, (data, target) in enumerate(val_loader):
+        if h.use_cuda:
+            data, target = data.cuda(), target.cuda()
+
+        for model in models:
+            for s in model.getSpec(data.to_dtype(), target):
+                loss = model.aiLoss(*s, **vargs).mean(dim=0)
+                val += loss.detach().item()
+
+            loss = model.aiLoss(data, target, **vargs).mean(dim=0)
+            val_origin += loss
+
+    return val_origin, val
 
 
 num_tests = 0
@@ -623,6 +640,12 @@ else:
     models = h.flat(
         [[createModel(net, h.parseValues(d, goals, scheduling), h.catStrs(d)) for net in nets] for d in args.domain])
 
+patience = 5
+last_best_origin = 0
+best_origin = 1e10
+last_best = 0
+best = 1e10
+decay = True
 with h.mopen(args.dont_write, os.path.join(out_dir, "log.txt"), "w") as f:
     startTime = timer()
     for epoch in range(1, args.epochs + 1):
@@ -637,4 +660,17 @@ with h.mopen(args.dont_write, os.path.join(out_dir, "log.txt"), "w") as f:
         if args.epochs <= args.test_freq:
             break
         with Timer("train all models in epoch", 1, f=f):
-            train(epoch, models)
+            val_origin, val = train(epoch, models, decay)
+            h.printBoth("Original val loss: %.2f\t Val loss: %.2f\n" % (val_origin, val), f=f)
+            if val_origin < best_origin:
+                best_origin = val_origin
+                last_best_origin = epoch
+            elif epoch - last_best_origin > patience:
+                h.printBoth("Early stopping decay at epoch %d\n" % epoch, f=f)
+                decay = False
+            if val < best:
+                best = val
+                last_best = epoch
+            elif epoch - last_best > patience and not decay:
+                h.printBoth("Early stopping at epoch %d\n" % epoch, f=f)
+                break

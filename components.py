@@ -273,10 +273,16 @@ class EmbeddingWithSub(InferModule):
             elif x.label[-len("Zonotope_Dataaug"):] == "Zonotope_Dataaug":
                 d = int(x.label[:-len("Zonotope_Dataaug")])
                 ret = []
-                for i in range(0, d, 3):
-                    t = min(3, d - i)
+                i = 0
+                while i < d:
+                    if d - i in [6, 7]:
+                        t = 3
+                    else:
+                        t = min(5, d - i)
                     x.label = str(t) + "Points"
                     ret.append(ai.TaggedDomain(LabeledDomain(x), g.DList.MLoss(1.0 * t / d)))
+                    i += t
+                    
                 return ai.ListDomain(ret)
             elif x.label[-len("Points_Interval"):] == "Points_Interval":
                 d = int(x.label[:-len("Points_Interval")])
