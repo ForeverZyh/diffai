@@ -662,12 +662,13 @@ with h.mopen(args.dont_write, os.path.join(out_dir, "log.txt"), "w") as f:
         with Timer("train all models in epoch", 1, f=f):
             val_origin, val = train(epoch, models, decay)
             h.printBoth("Original val loss: %.2f\t Val loss: %.2f\n" % (val_origin, val), f=f)
-            if val_origin < best_origin:
-                best_origin = val_origin
-                last_best_origin = epoch
-            elif epoch - last_best_origin > patience:
-                h.printBoth("Early stopping decay at epoch %d\n" % epoch, f=f)
-                decay = False
+            if decay:
+                if val_origin < best_origin:
+                    best_origin = val_origin
+                    last_best_origin = epoch
+                elif epoch - last_best_origin > patience:
+                    h.printBoth("Early stopping decay at epoch %d\n" % epoch, f=f)
+                    decay = False
             if not decay:
                 if val < best:
                     best = val
