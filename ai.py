@@ -1064,9 +1064,9 @@ class TaggedDomain(object):
         return TaggedDomain(self.a.merge(other.a, ref = None if ref is None else ref.a), self.tag)
 
 
-class ListMergeDomain(ListDomain):
+class ListConjDomain(ListDomain):
     def __init__(self, al, *args, **kargs):
-        super(ListMergeDomain, self).__init__(al, args, kargs)
+        super(ListConjDomain, self).__init__(al, args, kargs)
 
     def isSafe(self, target):
         assert len(self.al) > 0
@@ -1081,13 +1081,52 @@ class ListMergeDomain(ListDomain):
         raise NotImplementedError()
 
     def loss(self, target):
-        assert len(self.al) > 0
-        r = -h.preDomRes(self.al[0], target).lb()
+        r = self.al[0].ub()
+        inds = torch.arange(r.shape[0], device=h.device, dtype=h.ltype)
         for a in self.al[1:]:
-            r1 = -h.preDomRes(a, target).lb()
+            r1 = a.ub()
+            r = torch.min(r, r1)
+
+        t = self.al[0].lb()[inds, target]
+        for a in self.al[1:]:
+            t1 = a.lb()[inds, target]
+            t = torch.max(t, t1)
+
+        r[inds, target] = t
+        return r.loss(target)
+
+
+class ListDisjDomain(ListDomain):
+    def __init__(self, al, *args, **kargs):
+        super(ListDisjDomain, self).__init__(al, args, kargs)
+
+    def isSafe(self, target):
+        assert len(self.al) > 0
+        od, _ = torch.min(h.preDomRes(self.al[0], target).lb(), 1)
+        for a in self.al[1:]:
+            od1, _ = torch.min(h.preDomRes(a, target).lb(), 1)
+            od = torch.min(od, od1)
+
+        return od.gt(0.0).long()
+
+    def labels(self):
+        raise NotImplementedError()
+
+    def loss(self, target):
+        assert len(self.al) > 0
+        r = self.al[0].ub()
+        inds = torch.arange(r.shape[0], device=h.device, dtype=h.ltype)
+        for a in self.al[1:]:
+            r1 = a.ub()
             r = torch.max(r, r1)
 
-        return F.softplus(r.max(1)[0])
+        t = self.al[0].lb()[inds, target]
+        for a in self.al[1:]:
+            t1 = a.lb()[inds, target]
+            t = torch.min(t, t1)
+
+        r[inds, target] = t
+        return r.loss(target)
 
 
 class LabeledDomain(object):

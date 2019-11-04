@@ -280,10 +280,12 @@ class EmbeddingWithSub(InferModule):
                     else:
                         t = min(5, d - i)
                     x.label = str(t) + "Points"
-                    ret.append(ai.TaggedDomain(LabeledDomain(x), g.DList.MLoss(1.0 * t / d)))
+                    # ret.append(ai.TaggedDomain(LabeledDomain(x), g.DList.MLoss(1.0 * t / d)))
+                    ret.append(LabeledDomain(x))
                     i += t
-                    
-                return ai.ListDomain(ret)
+
+                # return ai.ListDomain(ret)
+                return ai.ListDisjDomain(ret)
             elif x.label[-len("Points_Interval"):] == "Points_Interval":
                 d = int(x.label[:-len("Points_Interval")])
                 ys = get_swaped(d)
@@ -313,7 +315,9 @@ class EmbeddingWithSub(InferModule):
             #     # ave = A / (self.in_shape[0] * self.dim)
             #     return ai.ListDomain([self.forward(ai, y=y) for ai in x.al])
             # else:
-            return ai.ListDomain([self.forward(ai) for ai in x.al])
+            for (i, a) in enumerate(x.al):
+                x.al[i] = self.forward(a)
+            return x
         elif not x.isPoint():  # convert to Box (HybirdZonotope), if the input is Box
             x = x.center().vanillaTensorPart()
             x = x.repeat((1, len(self.groups) + 1))
