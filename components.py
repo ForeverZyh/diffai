@@ -240,22 +240,6 @@ class EmbeddingWithSub(InferModule):
                 lower = torch.min(torch.min(y, y_ls_1), y_rs_1)
                 upper = torch.max(torch.max(y, y_ls_1), y_rs_1)
                 return ai.HybridZonotope((upper + lower) / 2, (upper - lower) / 2, None)
-            # elif x.label == "2Points":
-            #     ys = get_swaped(2)
-            #     # for i in range(10):
-            #     #     y1 = get_swaped(2)
-            #     #     for j in range(2):
-            #     #         ys[j] = torch.cat([ys[j], y1[j]], 0)
-            #     # # print(ys[0].size(), ys[1].size(0))
-            #     return ai.TaggedDomain(
-            #         ai.HybridZonotope((ys[0] + ys[1]) / 2, None, torch.unsqueeze((ys[0] - ys[1]) / 2, 0)), g.HBox(0))
-            # elif x.label == "3Points":
-            #     ys = get_swaped(3)
-            #     mid = (ys[0] + ys[1]) / 2
-            #     return ai.TaggedDomain(
-            #         ai.HybridZonotope((mid + ys[2]) / 2, None, torch.cat(
-            #             [torch.unsqueeze((ys[0] - ys[1]) / 2, 0), torch.unsqueeze((mid - ys[2]) / 2, 0)], 0)),
-            #         g.HBox(0))
             elif x.label[-6:] == "Points":
                 d = int(x.label[:-6])
                 if d == 1:
@@ -960,7 +944,7 @@ class ReduceToZono(InferModule):
                 x = x.view(-1, self.all_possible_sub, *self.in_shape)
                 lower = x.min(1)[0]
                 upper = x.max(1)[0]
-                return ai.HybridZonotope((lower + upper) / 2, (upper - lower) / 2, None)
+                return ai.TaggedDomain(ai.HybridZonotope((lower + upper) / 2, (upper - lower) / 2, None), g.Box(0))
             else:  # if it is a Point()
                 return x
 
