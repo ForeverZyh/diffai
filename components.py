@@ -944,12 +944,12 @@ class ReduceToZono(InferModule):
                 x = x.view(-1, self.all_possible_sub, *self.in_shape)
                 lower = x.min(1)[0]
                 upper = x.max(1)[0]
-                return ai.TaggedDomain(ai.HybridZonotope((lower + upper) / 2, (upper - lower) / 2, None), g.Box(0))
+                return ai.HybridZonotope((lower + upper) / 2, (upper - lower) / 2, None)
             else:  # if it is a Point()
                 return x
 
         if isinstance(x, ai.ListDomain):
-            return ai.ListDomain([self.forward(ai) for ai in x.al])
+            return ai.ListDomain([self.forward(a) for a in x.al])
         elif isinstance(x, ai.TaggedDomain):
             return ai.TaggedDomain(self.forward(x.a), x.tag)
         elif isinstance(x, torch.Tensor):
