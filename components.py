@@ -6,6 +6,7 @@ import torch.optim as optim
 import numpy as np
 
 import math
+import random
 
 try:
     from . import helpers as h
@@ -289,6 +290,28 @@ class EmbeddingWithSub(InferModule):
                 d = int(x.label[:-len("Points_Dataaug")])
                 ys = get_swaped(d)
                 return ai.ListDomain([ai.TaggedDomain(y, g.DList.MLoss(1.0 / d)) for y in ys])
+            elif x.label[-len("Convex_Dataaug"):] == "Convex_Dataaug":
+                d = int(x.label[:-len("Convex_Dataaug")])
+                ys = torch.cat(get_swaped(d), 1)
+                return ai.TaggedDomain(ys.view(-1, 1, self.in_shape[0], self.dim), tag="magic" + str(d))
+            elif x.label[-len("Convex_Box_Groups"):] == "Convex_Box_Groups":
+                random.shuffle(self.groups)
+                groups_consider = int(x.label[:-len("Convex_Box_Groups")])
+                x = xc.repeat((1, groups_consider + 1))
+                for i in x:
+                    for j in range(1, groups_consider + 1):
+                        for p, q in self.groups[j - 1]:
+                            i[j * self.in_shape[0] + p] = i[q]
+
+                y = self.embed(x.long()).view(-1, 1, self.in_shape[0], self.dim)
+                if self.delta != 1:
+                    for id in range(len(y)):
+                        item_group_id = id % (groups_consider + 1)
+                        item_id = id - item_group_id
+                        if item_group_id == 0: continue
+                        y[id] = y[id] * self.delta + (1 - self.delta) * y[item_id]
+
+                return ai.TaggedDomain(y, tag="magic" + str(groups_consider + 1))
             else:
                 raise NotImplementedError()
 
@@ -309,21 +332,23 @@ class EmbeddingWithSub(InferModule):
             return x
         elif not x.isPoint():  # convert to Box (HybirdZonotope), if the input is Box
             x = x.center().vanillaTensorPart()
-            x = x.repeat((1, len(self.groups) + 1))
+            # random.shuffle(self.groups)
+            groups_consider = len(self.groups)    # len(self.groups)
+            x = x.repeat((1, groups_consider + 1))
             for i in x:
-                for j in range(1, len(self.groups) + 1):
+                for j in range(1, groups_consider + 1):
                     for p, q in self.groups[j - 1]:
                         i[j * self.in_shape[0] + p] = i[q]
 
             y = self.embed(x.long()).view(-1, 1, self.in_shape[0], self.dim)
             if self.delta != 1:
                 for id in range(len(y)):
-                    item_group_id = id % (len(self.groups) + 1)
+                    item_group_id = id % (groups_consider + 1)
                     item_id = id - item_group_id
                     if item_group_id == 0: continue
                     y[id] = y[id] * self.delta + (1 - self.delta) * y[item_id]
 
-            return y
+            return ai.TaggedDomain(y, tag="magic" + str(groups_consider + 1))
         elif isinstance(x, torch.Tensor):  # it is a Point
             y = self.embed(x.long()).view(-1, 1, self.in_shape[0], self.dim)
             return y
@@ -929,33 +954,34 @@ class ParSum(InferModule):
 
 
 class ReduceToZono(InferModule):
-    def init(self, in_shape, all_possible_sub, customRelu=None, only_train=False, **kargs):
-        self.all_possible_sub = all_possible_sub
+    def init(self, in_shape, customRelu=None, only_train=False, **kargs):
         self.customRelu = customRelu
         self.only_train = only_train
         self.in_shape = in_shape
         return in_shape
 
     def forward(self, x, **kargs):
-        def get_reduced(x):
+        def get_reduced(x, all_possible_sub):
             num_e = h.product(x.size())
-            view_num = self.all_possible_sub * h.product(self.in_shape)
+            view_num = all_possible_sub * h.product(self.in_shape)
             if num_e >= view_num and num_e % view_num == 0:  # convert to Box (HybirdZonotope)
-                x = x.view(-1, self.all_possible_sub, *self.in_shape)
+                x = x.view(-1, all_possible_sub, *self.in_shape)
                 lower = x.min(1)[0]
                 upper = x.max(1)[0]
                 return ai.HybridZonotope((lower + upper) / 2, (upper - lower) / 2, None)
             else:  # if it is a Point()
-                return x
+                assert False
 
         if isinstance(x, ai.ListDomain):
             for (i, a) in enumerate(x.al):
                 x.al[i] = self.forward(a)
             return x
+        elif isinstance(x, ai.TaggedDomain) and isinstance(x.tag, str) and x.tag[:5] == "magic":
+            return get_reduced(x.a, int(x.tag[5:]))
         elif isinstance(x, ai.TaggedDomain):
             return ai.TaggedDomain(self.forward(x.a), x.tag)
         elif isinstance(x, torch.Tensor):
-            return get_reduced(x)
+            return x
         elif isinstance(x, ai.HybridZonotope):
             return x
         else:
