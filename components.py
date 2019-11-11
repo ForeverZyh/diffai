@@ -949,7 +949,9 @@ class ReduceToZono(InferModule):
                 return x
 
         if isinstance(x, ai.ListDomain):
-            return ai.ListDomain([self.forward(a) for a in x.al])
+            for (i, a) in enumerate(x.al):
+                x.al[i] = self.forward(a)
+            return x
         elif isinstance(x, ai.TaggedDomain):
             return ai.TaggedDomain(self.forward(x.a), x.tag)
         elif isinstance(x, torch.Tensor):
