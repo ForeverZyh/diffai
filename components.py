@@ -333,7 +333,7 @@ class EmbeddingWithSub(InferModule):
         elif not x.isPoint():  # convert to Box (HybirdZonotope), if the input is Box
             x = x.center().vanillaTensorPart()
             # random.shuffle(self.groups)
-            groups_consider = len(self.groups)    # len(self.groups)
+            groups_consider = len(self.groups)  # len(self.groups)
             x = x.repeat((1, groups_consider + 1))
             for i in x:
                 for j in range(1, groups_consider + 1):
@@ -968,7 +968,7 @@ class ReduceToZono(InferModule):
                 x = x.view(-1, all_possible_sub, *self.in_shape)
                 lower = x.min(1)[0]
                 upper = x.max(1)[0]
-                return ai.HybridZonotope((lower + upper) / 2, (upper - lower) / 2, None)
+                return ai.TaggedDomain(ai.HybridZonotope((lower + upper) / 2, (upper - lower) / 2, None), g.HBox(0))
             else:  # if it is a Point()
                 assert False
 
