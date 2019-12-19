@@ -363,6 +363,16 @@ def test(models, epoch, f=None):
             self.domains = [Stat(h.parseValues(d, goals), h.catStrs(d)) for d in args.test_domain]
 
     model_stats = [MStat(m) for m in models]
+    dict_map = dict(np.load("./dataset/AG/dict_map.npy").item())
+    lines = open("./dataset/en.key").readlines()
+    adjacent_keys = [[] for i in range(len(dict_map))]
+    for line in lines:
+        tmp = line.strip().split()
+        ret = set(tmp[1:]).intersection(dict_map.keys())
+        ids = []
+        for x in ret:
+            ids.append(dict_map[x])
+        adjacent_keys[dict_map[tmp[0]]].extend(ids)
 
     num_its = 0
     saved_data_target = []
@@ -384,8 +394,12 @@ def test(models, epoch, f=None):
                     for _ in range(args.test_swap_delta):
                         # t = np.random.randint(0, length) if args.test_swap_delta > 1 else j
                         # i[j * length + t] = i[j * length + t - 1] if (np.random.rand() < 0.5 or t == length - 1) and t != 0 else i[j * length + t + 1]
-                        t = np.random.randint(0, length - 1) if args.test_swap_delta > 1 else j
-                        i[j * length + t], i[j * length + t + 1] = i[j * length + t + 1], i[j * length + t]
+                        # t = np.random.randint(0, length - 1) if args.test_swap_delta > 1 else j
+                        # i[j * length + t], i[j * length + t + 1] = i[j * length + t + 1], i[j * length + t]
+                        t = np.random.randint(0, length)
+                        while i[t] not in adjacent_keys:
+                            t = np.random.randint(0, length)
+                        i[t] = adjacent_keys[i[t]][np.random.randint(0, len(adjacent_keys[i[t]]))]
             target = (target.view(-1, 1).repeat(1, length)).view(-1)
             data = data.view(-1, length)
 

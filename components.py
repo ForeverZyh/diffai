@@ -186,6 +186,16 @@ class EmbeddingWithSub(InferModule):
         self.in_shape = in_shape
         self.delta = delta
         self.embed = nn.Embedding(vocab, dim)
+        dict_map = dict(np.load("./dataset/AG/dict_map.npy").item())
+        lines = open("./dataset/en.key").readlines()
+        self.adjacent_keys = [[] for i in range(len(dict_map))]
+        for line in lines:
+            tmp = line.strip().split()
+            ret = set(tmp[1:]).intersection(dict_map.keys())
+            ids = []
+            for x in ret:
+                ids.append(dict_map[x])
+            self.adjacent_keys[dict_map[tmp[0]]].extend(ids)
 
         subs = [None] * self.in_shape[0]
         self.swaps = []
@@ -331,15 +341,36 @@ class EmbeddingWithSub(InferModule):
                 x.al[i] = self.forward(a)
             return x
         elif not x.isPoint():  # convert to Box (HybirdZonotope), if the input is Box
-            x = x.center().vanillaTensorPart()
+            x = x.center().vanillaTensorPart().long()
             # random.shuffle(self.groups)
-            groups_consider = len(self.groups)  # len(self.groups)
-            x = x.repeat((1, groups_consider + 1))
-            for i in x:
-                for j in range(1, groups_consider + 1):
-                    for p, q in self.groups[j - 1]:
-                        i[j * self.in_shape[0] + p] = i[q]
+            groups = [[] for i in range(len(x))]
+            for i, data in enumerate(x):
+                all_set = 0
+                subs = [[] for _ in range(len(data))]
+                for (j, s) in enumerate(data):
+                    s = int(s)
+                    subs[j] = self.adjacent_keys[s]
+                    all_set += len(subs[j])
+                    
+                while all_set > 0:
+                    pre = -self.in_shape[0]
+                    groups[i].append([])
+                    for j in range(len(subs)):
+                        if len(subs[j]) > 0:
+                            if j - pre >= 10:  # 10 here is the kernal size!
+                                pre = j
+                                groups[i][-1].append((j, subs[j][0]))
+                                subs[j] = subs[j][1:]
+                                all_set -= 1
 
+            groups_consider = 0
+            for t in groups:
+                groups_consider = max(groups_consider, len(t))
+            x = x.repeat((1, groups_consider + 1))
+            for (i, data) in enumerate(x):
+                for j in range(1, len(groups[i]) + 1):
+                    for p, q in groups[i][j - 1]:
+                        data[j * self.in_shape[0] + p] = q
             y = self.embed(x.long()).view(-1, 1, self.in_shape[0], self.dim)
             if self.delta != 1:
                 for id in range(len(y)):
@@ -347,6 +378,21 @@ class EmbeddingWithSub(InferModule):
                     item_id = id - item_group_id
                     if item_group_id == 0: continue
                     y[id] = y[id] * self.delta + (1 - self.delta) * y[item_id]
+
+            # groups_consider = len(self.groups)  # len(self.groups)
+            # x = x.repeat((1, groups_consider + 1))
+            # for i in x:
+            #     for j in range(1, groups_consider + 1):
+            #         for p, q in self.groups[j - 1]:
+            #             i[j * self.in_shape[0] + p] = i[q]
+            #
+            # y = self.embed(x.long()).view(-1, 1, self.in_shape[0], self.dim)
+            # if self.delta != 1:
+            #     for id in range(len(y)):
+            #         item_group_id = id % (groups_consider + 1)
+            #         item_id = id - item_group_id
+            #         if item_group_id == 0: continue
+            #         y[id] = y[id] * self.delta + (1 - self.delta) * y[item_id]
 
             return ai.TaggedDomain(y, tag="magic" + str(groups_consider + 1))
         elif isinstance(x, torch.Tensor):  # it is a Point
