@@ -262,7 +262,7 @@ def train(epoch, models, decay=True):
         if args.decay_fir:
             if epoch > 1 and isinstance(model.ty, goals.DList) and len(model.ty.al) == 2 and decay:
                 for (i, a) in enumerate(model.ty.al):
-                    if i == 0:
+                    if i == 1:
                         model.ty.al[i] = (a[0], Const(min(a[1].getVal() + 0.03, 0.75)))
                     else:
                         model.ty.al[i] = (a[0], Const(max(a[1].getVal() - 0.03, 0.25)))

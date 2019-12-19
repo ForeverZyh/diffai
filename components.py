@@ -351,7 +351,7 @@ class EmbeddingWithSub(InferModule):
                     s = int(s)
                     subs[j] = self.adjacent_keys[s]
                     all_set += len(subs[j])
-                    
+
                 while all_set > 0:
                     pre = -self.in_shape[0]
                     groups[i].append([])
@@ -1014,7 +1014,7 @@ class ReduceToZono(InferModule):
                 x = x.view(-1, all_possible_sub, *self.in_shape)
                 lower = x.min(1)[0]
                 upper = x.max(1)[0]
-                return ai.TaggedDomain(ai.HybridZonotope((lower + upper) / 2, (upper - lower) / 2, None), g.HBox(0))
+                return ai.HybridZonotope((lower + upper) / 2, (upper - lower) / 2, None)
             else:  # if it is a Point()
                 assert False
 
