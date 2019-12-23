@@ -259,15 +259,25 @@ def train(epoch, models, decay=True):
 
     for model in models:
         model.train()
-        if args.decay_fir:
-            if epoch > 1 and isinstance(model.ty, goals.DList) and len(model.ty.al) == 2 and decay:
-                for (i, a) in enumerate(model.ty.al):
-                    if i == 1:
-                        model.ty.al[i] = (a[0], Const(min(a[1].getVal() + 0.03, 0.75)))
-                    else:
-                        model.ty.al[i] = (a[0], Const(max(a[1].getVal() - 0.03, 0.25)))
+        #if args.decay_fir:
+        #    if epoch > 1 and isinstance(model.ty, goals.DList) and len(model.ty.al) == 2 and decay:
+        #        for (i, a) in enumerate(model.ty.al):
+        #            if i == 1:
+        #                model.ty.al[i] = (a[0], Const(min(a[1].getVal() + 0.0025, 0.75)))
+        #            else:
+        #                model.ty.al[i] = (a[0], Const(max(a[1].getVal() - 0.0025, 0.25)))
 
     for batch_idx, (data, target) in enumerate(train_loader):
+        if total_batches_seen * args.batch_size % 4000 == 0:
+            for model in models:
+                if args.decay_fir:
+                    if isinstance(model.ty, goals.DList) and len(model.ty.al) == 2 and decay:
+                        for (i, a) in enumerate(model.ty.al):
+                            if i == 1:
+                                model.ty.al[i] = (a[0], Const(min(a[1].getVal() + 0.001, 0.75)))
+                            else:
+                                model.ty.al[i] = (a[0], Const(max(a[1].getVal() - 0.001, 0.25)))
+
         total_batches_seen += 1
         time = float(total_batches_seen) / len(train_loader)
         if h.use_cuda:
@@ -322,7 +332,9 @@ def train(epoch, models, decay=True):
 
     val = 0
     val_origin = 0
+    batch_cnt = 0
     for batch_idx, (data, target) in enumerate(val_loader):
+        batch_cnt += 1
         if h.use_cuda:
             data, target = data.cuda(), target.cuda()
 
@@ -334,7 +346,7 @@ def train(epoch, models, decay=True):
             loss = model.aiLoss(data, target, **vargs).mean(dim=0)
             val_origin += loss.detach().item()
 
-    return val_origin, val
+    return val_origin / batch_cnt, val / batch_cnt
 
 
 num_tests = 0
@@ -364,7 +376,7 @@ def test(models, epoch, f=None):
 
     model_stats = [MStat(m) for m in models]
     dict_map = dict(np.load("./dataset/AG/dict_map.npy").item())
-    lines = open("./dataset/en.key").readlines()
+    lines = open("./dataset/en.key1").readlines()
     adjacent_keys = [[] for i in range(len(dict_map))]
     for line in lines:
         tmp = line.strip().split()
@@ -397,9 +409,10 @@ def test(models, epoch, f=None):
                         # t = np.random.randint(0, length - 1) if args.test_swap_delta > 1 else j
                         # i[j * length + t], i[j * length + t + 1] = i[j * length + t + 1], i[j * length + t]
                         t = np.random.randint(0, length)
-                        while i[t] not in adjacent_keys:
+                        while len(adjacent_keys[int(i[t])]) == 0:
                             t = np.random.randint(0, length)
-                        i[t] = adjacent_keys[i[t]][np.random.randint(0, len(adjacent_keys[i[t]]))]
+                        cid = int(i[t])
+                        i[j * length + t] = adjacent_keys[cid][0]
             target = (target.view(-1, 1).repeat(1, length)).view(-1)
             data = data.view(-1, length)
 
@@ -654,7 +667,7 @@ else:
     models = h.flat(
         [[createModel(net, h.parseValues(d, goals, scheduling), h.catStrs(d)) for net in nets] for d in args.domain])
 
-patience = 5
+patience = 30
 last_best_origin = 0
 best_origin = 1e10
 last_best = 0

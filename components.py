@@ -187,7 +187,7 @@ class EmbeddingWithSub(InferModule):
         self.delta = delta
         self.embed = nn.Embedding(vocab, dim)
         dict_map = dict(np.load("./dataset/AG/dict_map.npy").item())
-        lines = open("./dataset/en.key").readlines()
+        lines = open("./dataset/en.key1").readlines()
         self.adjacent_keys = [[] for i in range(len(dict_map))]
         for line in lines:
             tmp = line.strip().split()
@@ -366,11 +366,18 @@ class EmbeddingWithSub(InferModule):
             groups_consider = 0
             for t in groups:
                 groups_consider = max(groups_consider, len(t))
+            #print(groups_consider)
+            #groups_consider = 32
             x = x.repeat((1, groups_consider + 1))
-            for (i, data) in enumerate(x):
+            #for i in range(len(x)):
+            #    for j in range(1, len(groups[i][1]) + 1):
+            #        p, q = groups[i][1][j-1]
+            #        x[i][self.in_shape[0] * j + p] = q
+            #        x[i][self.in_shape[0] * groups_consider + p] = q
+            for i in range(len(x)):
                 for j in range(1, len(groups[i]) + 1):
                     for p, q in groups[i][j - 1]:
-                        data[j * self.in_shape[0] + p] = q
+                        x[i][j * self.in_shape[0] + p] = q
             y = self.embed(x.long()).view(-1, 1, self.in_shape[0], self.dim)
             if self.delta != 1:
                 for id in range(len(y)):
@@ -1011,7 +1018,19 @@ class ReduceToZono(InferModule):
             num_e = h.product(x.size())
             view_num = all_possible_sub * h.product(self.in_shape)
             if num_e >= view_num and num_e % view_num == 0:  # convert to Box (HybirdZonotope)
+                #print(x.shape)
+                #for i in range(len(x)):
+                #    for j in range(self.in_shape[1]):
+                #        t = (x[i,:,j,:] - x[0,:,j,:])**2
+                #        if int(t.sum()) != 0:
+                #            print(i,j,t.sum())
                 x = x.view(-1, all_possible_sub, *self.in_shape)
+                #lower1 = x[:,:-1,:,:].min(1)[0]
+                #upper1 = x[:,:-1,:,:].max(1)[0]
+                #lower2 = x[:,-2:,:,:].min(1)[0]
+                #upper2 = x[:,-2:,:,:].max(1)[0]
+                #print(((lower1 - lower2)**2).sum(), ((upper1 - upper2)**2).sum())
+                #assert int(((lower1-lower2)**2).sum()) == 0
                 lower = x.min(1)[0]
                 upper = x.max(1)[0]
                 return ai.HybridZonotope((lower + upper) / 2, (upper - lower) / 2, None)
