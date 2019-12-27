@@ -187,7 +187,7 @@ class EmbeddingWithSub(InferModule):
         self.delta = delta
         self.embed = nn.Embedding(vocab, dim)
         dict_map = dict(np.load("./dataset/AG/dict_map.npy").item())
-        lines = open("./dataset/en.key1").readlines()
+        lines = open("./dataset/en.key").readlines()
         self.adjacent_keys = [[] for i in range(len(dict_map))]
         for line in lines:
             tmp = line.strip().split()
@@ -993,6 +993,7 @@ class ReduceToZono(InferModule):
         def get_reduced(x, all_possible_sub):
             num_e = h.product(x.size())
             view_num = all_possible_sub * h.product(self.in_shape)
+            x = x.view(-1, all_possible_sub, *self.in_shape)
             if num_e >= view_num and num_e % view_num == 0:  # convert to Box (HybirdZonotope)
                 lower = x.min(1)[0]
                 upper = x.max(1)[0]

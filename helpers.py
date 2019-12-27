@@ -229,15 +229,15 @@ def loadDataset(dataset, batch_size, train, transform=True, val=False):
                 transforms.RandomHorizontalFlip(),
                 normalize,
             ]))
-    elif dataset in ["AG", "SST"]:
+    elif dataset in ["AG"]:
         X = np.load("./dataset/%s/X_%s.npy" % (dataset, 'train' if train else 'test'))
         y = np.load("./dataset/%s/y_%s.npy" % (dataset, 'train' if train else 'test'))
         if val:
-            X = X[-1000:]
-            y = y[-1000:]
+            X = X[:1000]
+            y = y[:1000]
         elif train:
-            X = X[:-1000]
-            y = y[:-1000]
+            X = X[1000:]
+            y = y[1000:]
 
         x = torch.from_numpy(X)
         train_set = torch.utils.data.TensorDataset(x, torch.from_numpy(y))
