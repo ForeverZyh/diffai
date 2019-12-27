@@ -336,20 +336,12 @@ class EmbeddingWithSub(InferModule):
         elif isinstance(x, ai.TaggedDomain):
             return ai.TaggedDomain(self.forward(x.a), x.tag)
         elif isinstance(x, ai.ListDomain):
-            # if isinstance(x.al[0], ai.LabeledDomain):
-            #     xc = x.center()
-            #     y = self.embed(xc.long()).view(-1, 1, self.in_shape[0], self.dim)
-            #     # A = torch.sum(y, dim=(1, 2, 3))
-            #     # ave = A / (self.in_shape[0] * self.dim)
-            #     return ai.ListDomain([self.forward(ai, y=y) for ai in x.al])
-            # else:
             for (i, a) in enumerate(x.al):
                 x.al[i] = self.forward(a)
             return x
         elif not x.isPoint():  # convert to Box (HybirdZonotope), if the input is Box
             x = x.center().vanillaTensorPart().long()
-            # random.shuffle(self.groups)
-            groups = [[] for i in range(len(x))]
+            groups = [[] for _ in range(len(x))]
             for i, data in enumerate(x):
                 all_set = 0
                 subs = [[] for _ in range(len(data))]
@@ -372,14 +364,7 @@ class EmbeddingWithSub(InferModule):
             groups_consider = 0
             for t in groups:
                 groups_consider = max(groups_consider, len(t))
-            #print(groups_consider)
-            #groups_consider = 32
             x = x.repeat((1, groups_consider + 1))
-            #for i in range(len(x)):
-            #    for j in range(1, len(groups[i][1]) + 1):
-            #        p, q = groups[i][1][j-1]
-            #        x[i][self.in_shape[0] * j + p] = q
-            #        x[i][self.in_shape[0] * groups_consider + p] = q
             for i in range(len(x)):
                 for j in range(1, len(groups[i]) + 1):
                     for p, q in groups[i][j - 1]:
@@ -391,21 +376,6 @@ class EmbeddingWithSub(InferModule):
                     item_id = id - item_group_id
                     if item_group_id == 0: continue
                     y[id] = y[id] * self.delta + (1 - self.delta) * y[item_id]
-
-            # groups_consider = len(self.groups)  # len(self.groups)
-            # x = x.repeat((1, groups_consider + 1))
-            # for i in x:
-            #     for j in range(1, groups_consider + 1):
-            #         for p, q in self.groups[j - 1]:
-            #             i[j * self.in_shape[0] + p] = i[q]
-            #
-            # y = self.embed(x.long()).view(-1, 1, self.in_shape[0], self.dim)
-            # if self.delta != 1:
-            #     for id in range(len(y)):
-            #         item_group_id = id % (groups_consider + 1)
-            #         item_id = id - item_group_id
-            #         if item_group_id == 0: continue
-            #         y[id] = y[id] * self.delta + (1 - self.delta) * y[item_id]
 
             return ai.TaggedDomain(y, tag="magic" + str(groups_consider + 1))
         elif isinstance(x, torch.Tensor):  # it is a Point
@@ -1024,19 +994,6 @@ class ReduceToZono(InferModule):
             num_e = h.product(x.size())
             view_num = all_possible_sub * h.product(self.in_shape)
             if num_e >= view_num and num_e % view_num == 0:  # convert to Box (HybirdZonotope)
-                #print(x.shape)
-                #for i in range(len(x)):
-                #    for j in range(self.in_shape[1]):
-                #        t = (x[i,:,j,:] - x[0,:,j,:])**2
-                #        if int(t.sum()) != 0:
-                #            print(i,j,t.sum())
-                x = x.view(-1, all_possible_sub, *self.in_shape)
-                #lower1 = x[:,:-1,:,:].min(1)[0]
-                #upper1 = x[:,:-1,:,:].max(1)[0]
-                #lower2 = x[:,-2:,:,:].min(1)[0]
-                #upper2 = x[:,-2:,:,:].max(1)[0]
-                #print(((lower1 - lower2)**2).sum(), ((upper1 - upper2)**2).sum())
-                #assert int(((lower1-lower2)**2).sum()) == 0
                 lower = x.min(1)[0]
                 upper = x.max(1)[0]
                 return ai.HybridZonotope((lower + upper) / 2, (upper - lower) / 2, None)
@@ -1060,9 +1017,6 @@ class ReduceToZono(InferModule):
 
     def neuronCount(self):
         return 0
-
-    # def abstract_forward(self, x, **kargs):
-    #     return x.abstractApplyLeaf('hybrid_to_zono', customRelu=self.customRelu)
 
     def showNet(self, t=""):
         print(t + self.__class__.__name__ + " only_train=" + str(self.only_train))
