@@ -376,7 +376,7 @@ def test(models, epoch, f=None):
 
     model_stats = [MStat(m) for m in models]
     dict_map = dict(np.load("./dataset/AG/dict_map.npy").item())
-    lines = open("./dataset/en.key1").readlines()
+    lines = open("./dataset/en.key").readlines()
     adjacent_keys = [[] for i in range(len(dict_map))]
     for line in lines:
         tmp = line.strip().split()
