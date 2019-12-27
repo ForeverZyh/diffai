@@ -217,7 +217,7 @@ class EmbeddingWithSub(InferModule):
             self.groups.append([])
             for i in range(len(subs)):
                 if len(subs[i]) > 0:
-                    if i - pre >= 10:  # 10 here is the kernal size!
+                    if i - pre >= 20:  # 20 here is the kernal size + pooling size!
                         pre = i
                         self.groups[-1].append((i, subs[i][0]))
                         subs[i] = subs[i][1:]
@@ -305,8 +305,14 @@ class EmbeddingWithSub(InferModule):
                 ys = torch.cat(get_swaped(d), 1)
                 return ai.TaggedDomain(ys.view(-1, 1, self.in_shape[0], self.dim), tag="magic" + str(d))
             elif x.label[-len("Convex_Box_Groups"):] == "Convex_Box_Groups":
-                random.shuffle(self.groups)
-                groups_consider = int(x.label[:-len("Convex_Box_Groups")])
+                try:
+                    groups_consider = int(x.label[:-len("Convex_Box_Groups")])
+                except:
+                    groups_consider = None
+                if groups_consider is None:
+                    groups_consider = len(self.groups)
+                else:
+                    random.shuffle(self.groups)
                 x = xc.repeat((1, groups_consider + 1))
                 for i in x:
                     for j in range(1, groups_consider + 1):
@@ -357,7 +363,7 @@ class EmbeddingWithSub(InferModule):
                     groups[i].append([])
                     for j in range(len(subs)):
                         if len(subs[j]) > 0:
-                            if j - pre >= 10:  # 10 here is the kernal size!
+                            if j - pre >= 20:  # 20 here is the kernal size + pooling size!
                                 pre = j
                                 groups[i][-1].append((j, subs[j][0]))
                                 subs[j] = subs[j][1:]

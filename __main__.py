@@ -274,9 +274,9 @@ def train(epoch, models, decay=True):
                     if isinstance(model.ty, goals.DList) and len(model.ty.al) == 2 and decay:
                         for (i, a) in enumerate(model.ty.al):
                             if i == 1:
-                                model.ty.al[i] = (a[0], Const(min(a[1].getVal() + 0.001, 0.75)))
-                            else:
-                                model.ty.al[i] = (a[0], Const(max(a[1].getVal() - 0.001, 0.25)))
+                                model.ty.al[i] = (a[0], Const(min(a[1].getVal() + 0.0025, 3)))
+                            # else:
+                            #    model.ty.al[i] = (a[0], Const(max(a[1].getVal() - 0.00075, 0.25)))
 
         total_batches_seen += 1
         time = float(total_batches_seen) / len(train_loader)
