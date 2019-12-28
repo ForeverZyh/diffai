@@ -216,7 +216,8 @@ parser.add_argument('--dont-write', type=h.str2bool, nargs='?', const=True, defa
 parser.add_argument('--write-first', type=h.str2bool, nargs='?', const=True, default=False,
                     help='write the initial net.  Useful for comparing algorithms, a pain for testing.')
 parser.add_argument('--test-size', type=int, default=2000, help='number of examples to test with')
-parser.add_argument('--test-swap-delta', type=int, default=0, help='number of swaps in each sentence')
+parser.add_argument('--test-swap-delta', type=int, default=None, help='test the number of swaps in each sentence')
+parser.add_argument('--train-swap-delta', type=int, default=None, help='train the number of swaps in each sentence')
 
 parser.add_argument('-r', '--regularize', type=float, default=None, help='use regularization')
 parser.add_argument("--gpu_id", type=str, default=None, help="specify gpu id, None for all")
@@ -252,31 +253,29 @@ print("Num classes: ", num_classes)
 vargs = vars(args)
 
 total_batches_seen = 0
-
+decay_step = 4000
+decay_delta = args.train_swap_delta / (args.epochs * 0.8 * len(train_loader) * args.batch_size / decay_step)
+decay_ratio = 0.75 / (args.epochs * 0.8 * len(train_loader) * args.batch_size / decay_step)
 
 def train(epoch, models, decay=True):
     global total_batches_seen
 
     for model in models:
         model.train()
-        #if args.decay_fir:
-        #    if epoch > 1 and isinstance(model.ty, goals.DList) and len(model.ty.al) == 2 and decay:
-        #        for (i, a) in enumerate(model.ty.al):
-        #            if i == 1:
-        #                model.ty.al[i] = (a[0], Const(min(a[1].getVal() + 0.0025, 0.75)))
-        #            else:
-        #                model.ty.al[i] = (a[0], Const(max(a[1].getVal() - 0.0025, 0.25)))
 
     for batch_idx, (data, target) in enumerate(train_loader):
-        if total_batches_seen * args.batch_size % 4000 == 0:
+        if args.decay_fir and (total_batches_seen + 1) * args.batch_size % decay_step == 0:
+            EmbeddingWithSub.delta = min(EmbeddingWithSub.delta + decay_delta, args.train_swap_delta)
+            print(("delta: {}").format(EmbeddingWithSub.delta))
             for model in models:
-                if args.decay_fir:
-                    if isinstance(model.ty, goals.DList) and len(model.ty.al) == 2 and decay:
-                        for (i, a) in enumerate(model.ty.al):
-                            if i == 1:
-                                model.ty.al[i] = (a[0], Const(min(a[1].getVal() + 0.0025, 3)))
-                            # else:
-                            #    model.ty.al[i] = (a[0], Const(max(a[1].getVal() - 0.00075, 0.25)))
+                if isinstance(model.ty, goals.DList) and len(model.ty.al) == 2 and decay:
+                    for (i, a) in enumerate(model.ty.al):
+                        if i == 1:
+                            t = Const(min(a[1].getVal() + decay_ratio, 0.75))
+                            print(("ratio: {}").format(str(t)))
+                            model.ty.al[i] = (a[0], t)
+                        else:
+                            model.ty.al[i] = (a[0], Const(max(a[1].getVal() - decay_ratio, 0.25)))
 
         total_batches_seen += 1
         time = float(total_batches_seen) / len(train_loader)

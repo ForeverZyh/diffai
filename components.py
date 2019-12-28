@@ -180,11 +180,11 @@ class Embedding(InferModule):
 
 
 class EmbeddingWithSub(InferModule):
-    def init(self, in_shape, vocab, dim, delta, **kargs):
+    delta = 0
+    def init(self, in_shape, vocab, dim, **kargs):
         self.vocab = vocab
         self.dim = dim
         self.in_shape = in_shape
-        self.delta = delta
         self.embed = nn.Embedding(vocab, dim)
         dict_map = dict(np.load("./dataset/AG/dict_map.npy").item())
         lines = open("./dataset/en.key").readlines()
@@ -206,11 +206,9 @@ class EmbeddingWithSub(InferModule):
                 self.swaps.append([(i, i + 1)])
             elif i < len(subs) - 1:
                 subs[i] = [i - 1, i + 1]
-                self.swaps.append([(i, i - 1)])
                 self.swaps.append([(i, i + 1)])
             else:
                 subs[i] = [i - 1]
-                self.swaps.append([(i, i - 1)])
         self.groups = []
         while all_set > 0:
             pre = -self.in_shape[0]
@@ -239,6 +237,17 @@ class EmbeddingWithSub(InferModule):
                         y1[:, :, p, :], y1[:, :, q, :] = y1[:, :, q, :], y1[:, :, p, :]
                     ys.append(y1)
                 return ys
+            def get_swaped_x(d):
+                t = np.zeros(d)
+                while len(np.unique(t)) != d:
+                    t = np.random.randint(0, len(self.swaps), d)
+                xs = [self.forward(ai.TaggedDomain(ai.HybridZonotope(xc, 0, None), g.HBox(0)), sample_num=6)]
+                for i in range(d):
+                    x1 = xc.clone()
+                    for (p, q) in self.swaps[t[i]]:
+                        x1[:, p], x1[:, q] = x1[:, q], x1[:, p]
+                    xs.append(self.forward(ai.TaggedDomain(ai.HybridZonotope(x1, 0, None), g.HBox(0)), sample_num=6))
+                return xs
 
             xc = x.center()
             y = self.embed(xc.long()).view(-1, 1, self.in_shape[0], self.dim)
@@ -320,26 +329,36 @@ class EmbeddingWithSub(InferModule):
                             i[j * self.in_shape[0] + p] = i[q]
 
                 y = self.embed(x.long()).view(-1, 1, self.in_shape[0], self.dim)
-                if self.delta != 1:
-                    for id in range(len(y)):
-                        item_group_id = id % (groups_consider + 1)
-                        item_id = id - item_group_id
-                        if item_group_id == 0: continue
-                        y[id] = y[id] * self.delta + (1 - self.delta) * y[item_id]
+                for id in range(len(y)):
+                    item_group_id = id % (groups_consider + 1)
+                    item_id = id - item_group_id
+                    if item_group_id == 0: continue
+                    y[id] = y[id] * EmbeddingWithSub.delta + (1 - EmbeddingWithSub.delta) * y[item_id]
 
                 return ai.TaggedDomain(y, tag="magic" + str(groups_consider + 1))
+            elif x.label[-len("Swap_First"):] == "Swap_First":
+                d = int(x.label[:-len("Swap_First")])
+                xs = get_swaped_x(d)
+                return ai.ListDomain([ai.TaggedDomain(y, g.DList.MLoss(1.0 / (d + 1))) for x in xs])
             else:
                 raise NotImplementedError()
 
         if isinstance(x, ai.LabeledDomain):
             return LabeledDomain(x, **kargs)
         elif isinstance(x, ai.TaggedDomain):
-            return ai.TaggedDomain(self.forward(x.a), x.tag)
+            return ai.TaggedDomain(self.forward(x.a, **kargs), x.tag)
         elif isinstance(x, ai.ListDomain):
             for (i, a) in enumerate(x.al):
-                x.al[i] = self.forward(a)
+                x.al[i] = self.forward(a, **kargs)
             return x
         elif not x.isPoint():  # convert to Box (HybirdZonotope), if the input is Box
+            sample_num = 100
+            swaps = []
+            if "sample_num" in kargs:
+                sample_num = kargs["sample_num"]
+            if "swaps" in kargs:
+                sample_num = kargs["swaps"]
+            
             x = x.center().vanillaTensorPart().long()
             groups = [[] for _ in range(len(x))]
             for i, data in enumerate(x):
@@ -360,22 +379,23 @@ class EmbeddingWithSub(InferModule):
                                 groups[i][-1].append((j, subs[j][0]))
                                 subs[j] = subs[j][1:]
                                 all_set -= 1
+                    if sample_num < 100:
+                        random.shuffle(groups[i])
 
             groups_consider = 0
             for t in groups:
-                groups_consider = max(groups_consider, len(t))
+                groups_consider = min(max(groups_consider, len(t)), sample_num)         
             x = x.repeat((1, groups_consider + 1))
             for i in range(len(x)):
-                for j in range(1, len(groups[i]) + 1):
+                for j in range(1, min(groups_consider, len(groups[i])) + 1):
                     for p, q in groups[i][j - 1]:
                         x[i][j * self.in_shape[0] + p] = q
             y = self.embed(x.long()).view(-1, 1, self.in_shape[0], self.dim)
-            if self.delta != 1:
-                for id in range(len(y)):
-                    item_group_id = id % (groups_consider + 1)
-                    item_id = id - item_group_id
-                    if item_group_id == 0: continue
-                    y[id] = y[id] * self.delta + (1 - self.delta) * y[item_id]
+            for id in range(len(y)):
+                item_group_id = id % (groups_consider + 1)
+                item_id = id - item_group_id
+                if item_group_id == 0: continue
+                y[id] = y[id] * EmbeddingWithSub.delta + (1 - EmbeddingWithSub.delta) * y[item_id]
 
             return ai.TaggedDomain(y, tag="magic" + str(groups_consider + 1))
         elif isinstance(x, torch.Tensor):  # it is a Point
