@@ -246,7 +246,7 @@ class EmbeddingWithSub(InferModule):
                     x1 = xc.clone()
                     for (p, q) in self.swaps[t[i]]:
                         x1[:, p], x1[:, q] = x1[:, q], x1[:, p]
-                    xs.append(self.forward(ai.TaggedDomain(ai.HybridZonotope(x1, 0, None), g.HBox(0)), sample_num=6))
+                    xs.append(self.forward(ai.TaggedDomain(ai.HybridZonotope(x1, 0, None), g.HBox(0)), sample_num=6, swaps=[p, q]))
                 return xs
 
             xc = x.center()
@@ -340,6 +340,52 @@ class EmbeddingWithSub(InferModule):
                 d = int(x.label[:-len("Swap_First")])
                 xs = get_swaped_x(d)
                 return ai.ListDomain([ai.TaggedDomain(y, g.DList.MLoss(1.0 / (d + 1))) for x in xs])
+            elif x.label[-len("SwapSub"):] == "SwapSub":
+                a, b = [int(c) for c in x.label[:-len("SwapSub")].split()]
+                x = xc.vanillaTensorPart().long()
+                groups = [[] for _ in range(len(x))]
+                for i, data in enumerate(x):
+                    subs = [[] for _ in range(len(data))]
+                    swaps = [True for _ in range(len(data) - 1)]
+                    all_set = len(swaps)
+                    for (j, s) in enumerate(data):
+                        s = int(s)
+                        subs[j] = self.adjacent_keys[s]
+                        all_set += len(subs[j])
+
+                    while all_set > 0:
+                        pre = -self.in_shape[0]
+                        groups[i].append([])
+                        for j in range(len(subs)):
+                            if j - pre >= 20:  # 20 here is the kernal size + pooling size!
+                                if len(subs[j]) > 0:
+                                    pre = j
+                                    groups[i][-1].append((j, subs[j][0]))
+                                    subs[j] = subs[j][1:]
+                                    all_set -= 1
+                                elif j < len(swaps) and swaps[j]:
+                                    pre = j + 1
+                                    groups[i][-1].append((j, int(data[j + 1])))
+                                    groups[i][-1].append((j + 1, int(data[j])))
+                                    all_set -= 1
+                                    swaps[j] = False
+
+                groups_consider = 0
+                for t in groups:
+                    groups_consider = max(groups_consider, len(t))   
+                x = x.repeat((1, groups_consider + 1))
+                for i in range(len(x)):
+                    for j in range(1, min(groups_consider, len(groups[i])) + 1):
+                        for p, q in groups[i][j - 1]:
+                            x[i][j * self.in_shape[0] + p] = q
+                y = self.embed(x.long()).view(-1, 1, self.in_shape[0], self.dim)
+                for id in range(len(y)):
+                    item_group_id = id % (groups_consider + 1)
+                    item_id = id - item_group_id
+                    if item_group_id == 0: continue
+                    y[id] = y[id] * EmbeddingWithSub.delta * (a + b) + (1 - EmbeddingWithSub.delta * (a + b)) * y[item_id]
+
+                return ai.TaggedDomain(y, tag="magic" + str(groups_consider + 1))
             else:
                 raise NotImplementedError()
 
@@ -357,7 +403,7 @@ class EmbeddingWithSub(InferModule):
             if "sample_num" in kargs:
                 sample_num = kargs["sample_num"]
             if "swaps" in kargs:
-                sample_num = kargs["swaps"]
+                swaps = kargs["swaps"]
             
             x = x.center().vanillaTensorPart().long()
             groups = [[] for _ in range(len(x))]
@@ -373,7 +419,7 @@ class EmbeddingWithSub(InferModule):
                     pre = -self.in_shape[0]
                     groups[i].append([])
                     for j in range(len(subs)):
-                        if len(subs[j]) > 0:
+                        if len(subs[j]) > 0 and j not in swaps:
                             if j - pre >= 20:  # 20 here is the kernal size + pooling size!
                                 pre = j
                                 groups[i][-1].append((j, subs[j][0]))

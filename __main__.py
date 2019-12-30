@@ -34,6 +34,8 @@ import scheduling
 from goals import *
 from scheduling import *
 
+from exhaustive import *
+
 import math
 
 import warnings
@@ -216,8 +218,8 @@ parser.add_argument('--dont-write', type=h.str2bool, nargs='?', const=True, defa
 parser.add_argument('--write-first', type=h.str2bool, nargs='?', const=True, default=False,
                     help='write the initial net.  Useful for comparing algorithms, a pain for testing.')
 parser.add_argument('--test-size', type=int, default=2000, help='number of examples to test with')
-parser.add_argument('--test-swap-delta', type=int, default=None, help='test the number of swaps in each sentence')
-parser.add_argument('--train-swap-delta', type=int, default=None, help='train the number of swaps in each sentence')
+parser.add_argument('--test-func', type=str, default=None, help='exhaustive test function')
+parser.add_argument('--train-delta', type=int, default=None, help='train the number of delta in each sentence')
 
 parser.add_argument('-r', '--regularize', type=float, default=None, help='use regularization')
 parser.add_argument("--gpu_id", type=str, default=None, help="specify gpu id, None for all")
@@ -254,8 +256,13 @@ vargs = vars(args)
 
 total_batches_seen = 0
 decay_step = 4000
-decay_delta = args.train_swap_delta / (args.epochs * 0.8 * len(train_loader) * args.batch_size / decay_step)
-decay_ratio = 0.75 / (args.epochs * 0.8 * len(train_loader) * args.batch_size / decay_step)
+
+if args.decay_fir:
+    decay_delta = args.train_delta / (args.epochs * 0.8 * len(train_loader) * args.batch_size / decay_step)
+    decay_ratio = 0.75 / (args.epochs * 0.8 * len(train_loader) * args.batch_size / decay_step)
+else:
+    decay_delta = 0
+    decay_ratio = 0
 
 def train(epoch, models, decay=True):
     global total_batches_seen
@@ -265,7 +272,7 @@ def train(epoch, models, decay=True):
 
     for batch_idx, (data, target) in enumerate(train_loader):
         if args.decay_fir and (total_batches_seen + 1) * args.batch_size % decay_step == 0:
-            EmbeddingWithSub.delta = min(EmbeddingWithSub.delta + decay_delta, args.train_swap_delta)
+            EmbeddingWithSub.delta = min(EmbeddingWithSub.delta + decay_delta, args.train_delta)
             print(("delta: {}").format(EmbeddingWithSub.delta))
             for model in models:
                 if isinstance(model.ty, goals.DList) and len(model.ty.al) == 2 and decay:
@@ -374,16 +381,6 @@ def test(models, epoch, f=None):
             self.domains = [Stat(h.parseValues(d, goals), h.catStrs(d)) for d in args.test_domain]
 
     model_stats = [MStat(m) for m in models]
-    dict_map = dict(np.load("./dataset/AG/dict_map.npy").item())
-    lines = open("./dataset/en.key").readlines()
-    adjacent_keys = [[] for i in range(len(dict_map))]
-    for line in lines:
-        tmp = line.strip().split()
-        ret = set(tmp[1:]).intersection(dict_map.keys())
-        ids = []
-        for x in ret:
-            ids.append(dict_map[x])
-        adjacent_keys[dict_map[tmp[0]]].extend(ids)
 
     num_its = 0
     saved_data_target = []
@@ -395,31 +392,35 @@ def test(models, epoch, f=None):
             saved_data_target += list(zip(list(data), list(target)))
 
         num_its += data.size()[0]
-        if num_its % 100 == 0:
-            print(num_its, model_stats[0].domains[0].safe * 100.0 / num_its)
-        if args.test_swap_delta > 0:
-            length = data.size()[1]
-            data = data.repeat(1, length)
-            for i in data:
-                for j in range(length - 1):
-                    for _ in range(args.test_swap_delta):
-                        t = np.random.randint(0, length)
-                        while len(adjacent_keys[int(i[t])]) == 0:
-                            t = np.random.randint(0, length)
-                        cid = int(i[t])
-                        i[j * length + t] = adjacent_keys[cid][0]
-            target = (target.view(-1, 1).repeat(1, length)).view(-1)
-            data = data.view(-1, length)
-
         if h.use_cuda:
             data, target = data.cuda().to_dtype(), target.cuda()
 
         for m in model_stats:
 
             with torch.no_grad():
-                pred = m.model(data).vanillaTensorPart().max(1, keepdim=True)[
-                    1]  # get the index of the max log-probability
-                m.correct += pred.eq(target.data.view_as(pred)).sum()
+                if args.test_func is not None:
+                    correct = 0
+                    for d, t in zip(data, target):
+                        iterator_oracle = eval(args.test_func)
+                        all_correct = True
+                        for batch_d in iterator_oracle:
+                            batch_size = len(batch_d)
+                            batch_t = t.repeat(batch_size).unsqueeze(-1)
+                            pred = m.model(batch_d).vanillaTensorPart().max(1, keepdim=True)[1]  # get the index of the max log-probability
+                            batch_correct = pred.eq(batch_t.data.view_as(pred)).sum()
+                            if batch_correct != batch_size:
+                                all_correct = False
+                                break
+                                
+                        if all_correct: correct += 1
+                    
+                    m.correct += correct
+                else:
+                    pred = m.model(data).vanillaTensorPart().max(1, keepdim=True)[1]  # get the index of the max log-probability
+                    m.correct += pred.eq(target.data.view_as(pred)).sum()
+                    
+                if num_its % 100 == 0:
+                    print(num_its, int(m.correct) * 100.0 / num_its)
 
             for stat in m.domains:
                 timer = Timer(shouldPrint=False)
@@ -438,22 +439,8 @@ def test(models, epoch, f=None):
                     if m.model.net.neuronCount() < 5000 or stat.domain in SYMETRIC_DOMAINS:
                         calcData(data, target)
                     else:
-                        if args.test_swap_delta > 0:
-                            length = data.size()[1]
-                            pre_stat = copy.deepcopy(stat)
-                            for i, (d, t) in enumerate(zip(data, target)):
-                                calcData(d.unsqueeze(0), t.unsqueeze(0))
-                                if (i + 1) % length == 0:
-                                    d_proved = (stat.proved - pre_stat.proved) // length
-                                    d_safe = (stat.safe - pre_stat.safe) // length
-                                    d_width = (stat.width - pre_stat.width) / length
-                                    stat.proved = pre_stat.proved + d_proved
-                                    stat.safe = pre_stat.safe + d_safe
-                                    stat.width = pre_stat.width + d_width
-                                    pre_stat = copy.deepcopy(stat)
-                        else:
-                            for d, t in zip(data, target):
-                                calcData(d.unsqueeze(0), t.unsqueeze(0))
+                        for d, t in zip(data, target):
+                            calcData(d.unsqueeze(0), t.unsqueeze(0))
                 stat.time += timer.getUnitTime()
 
     l = num_its  # len(test_loader.dataset)
