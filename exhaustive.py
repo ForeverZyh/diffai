@@ -1,6 +1,7 @@
 import numpy as np
 import itertools
 import torch
+import copy
 
 
 dict_map = dict(np.load("./dataset/AG/dict_map.npy").item())
@@ -14,9 +15,13 @@ for line in lines:
         ids.append(dict_map[x])
     adjacent_keys[dict_map[tmp[0]]].extend(ids)
     
-def SwapSub(a, b, x, batch_size=64):
-    x = x.cpu()
-    X = []
+def SwapSub(a, b, x, is_numpy=False, batch_size=64):
+    if not is_numpy:
+        x = x.cpu()
+        X = []
+    else:
+        X = np.tile(np.expand_dims(x, 0), (batch_size, 1))
+        current_id = 0
     valid_swap_poss = [i for i in range(len(x) - 1) if int(x[i]) != int(x[i + 1])]
     for swap in range(a, -1, -1):
         for swap_poss in itertools.combinations(tuple(valid_swap_poss), swap):
@@ -27,19 +32,30 @@ def SwapSub(a, b, x, batch_size=64):
                     overlape = True
             if overlape:
                 continue
-            x1 = x.clone()
-            for swap_pos in swap_poss:
-                x1[swap_pos], x1[swap_pos + 1] = x1[swap_pos + 1], x1[swap_pos]
             valid_sub_poss = [i for i in range(len(x)) if (i not in swap_poss) and (i - 1 not in swap_poss) and len(adjacent_keys[int(x[i])]) > 0]
-            
             for sub in range(b, -1, -1):
                 for sub_poss in itertools.combinations(tuple(valid_sub_poss), sub):
-                    x2 = x1.clone()
+                    if is_numpy:
+                        x2 = X[current_id]
+                    else:
+                        x2 = x.clone()
+                    for swap_pos in swap_poss:
+                        x2[swap_pos], x2[swap_pos + 1] = x2[swap_pos + 1], x2[swap_pos]
                     for sub_pos in sub_poss:
                         x2[sub_pos] = adjacent_keys[int(x[sub_pos])][0]
-                    X.append(x2.unsqueeze(0))
-                    if len(X) == batch_size:
-                        yield torch.cat(X, 0).cuda()
-                        X = []
+                    if is_numpy:
+                        current_id += 1
+                        if current_id >= batch_size:
+                            yield X
+                            X = np.tile(np.expand_dims(x, 0), (batch_size, 1))
+                            current_id = 0
+                    else:
+                        X.append(x2.unsqueeze(0))
+                        if len(X) == batch_size:
+                            yield torch.cat(X, 0).cuda()
+                            X = []
     if len(X) > 0:
-        yield torch.cat(X, 0).cuda()
+        if is_numpy:
+            yield X
+        else:
+            yield torch.cat(X, 0).cuda()
