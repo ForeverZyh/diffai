@@ -118,3 +118,8 @@ class Complement(Const): # use with mix when aw = 1, and 0 <= c < 1
 
     def __str__(self):
         return "Complement(%s)" % str(self.c)
+    
+    
+class Info:
+    out_y = None
+    adv = False

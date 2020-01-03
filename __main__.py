@@ -3,6 +3,7 @@ import builtins
 import past
 import six
 import copy
+from functools import partial
 
 from timeit import default_timer as timer
 from datetime import datetime
@@ -20,6 +21,8 @@ import numpy as np
 import inspect
 from inspect import getargspec
 import os
+import sys
+sys.path.append("./")
 import helpers as h
 from helpers import Timer
 import copy
@@ -35,6 +38,10 @@ from goals import *
 from scheduling import *
 
 from exhaustive import *
+
+from utils import Dict, Multiprocessing, MultiprocessingWithoutPipe
+from DSL.transformations import REGEX, Transformation, INS, tUnion, SUB, DEL, Composition, Union, SWAP
+from DSL.Alphabet import Alphabet
 
 import math
 
@@ -220,6 +227,7 @@ parser.add_argument('--write-first', type=h.str2bool, nargs='?', const=True, def
 parser.add_argument('--test-size', type=int, default=2000, help='number of examples to test with')
 parser.add_argument('--test-func', type=str, default=None, help='exhaustive test function')
 parser.add_argument('--train-delta', type=int, default=None, help='train the number of delta in each sentence')
+parser.add_argument('--adv-train', type=int, default=0, help='adv training combined abstract training')
 
 parser.add_argument('-r', '--regularize', type=float, default=None, help='use regularization')
 parser.add_argument("--gpu_id", type=str, default=None, help="specify gpu id, None for all")
@@ -259,16 +267,52 @@ decay_step = 4000
 
 if args.decay_fir:
     decay_delta = args.train_delta / (args.epochs * 0.8 * len(train_loader) * args.batch_size / decay_step)
-    decay_ratio = 0.75 / (args.epochs * 0.8 * len(train_loader) * args.batch_size / decay_step)
+    decay_ratio = 0.5 / (args.epochs * 0.8 * len(train_loader) * args.batch_size / decay_step)
 else:
     decay_delta = 0
     decay_ratio = 0
 
+Alphabet.set_char_model()
+Alphabet.max_len = 300
+Alphabet.padding = " "
+dict_map = dict(np.load("./dataset/AG/dict_map.npy").item())
+Alphabet.set_alphabet(dict_map, np.zeros((56, 64)))
+keep_same = REGEX(r".*")
+chars = Dict(dict_map)
+swap = SWAP(lambda c: True, lambda c: True)
+transform = Transformation(keep_same, swap, keep_same)
+# generate adv attack examples
+def adv_batch(batch_X, batch_Y):
+    Info.adv = True
+    adv_batch_X = []
+    arg_list = []
+    for x, y in zip(batch_X, batch_Y):
+        arg_list.append((chars.to_string(x), y, args.adv_train))
+#                 rets = Multiprocessing.mapping(transform.beam_search_adversarial, arg_list, 16, Alphabet.partial_to_loss)
+#                 for i, ret in enumerate(rets):
+    for i, arg in enumerate(arg_list):
+        ret = transform.beam_search_adversarial(*arg)
+        adv_batch_X.append(batch_X[i].unsqueeze(0))
+        for j in range(len(ret)):
+            adv_batch_X.append(torch.Tensor(chars.to_ids(ret[j][0])).cuda().unsqueeze(0).long())
+            
+    Info.adv = False
+    return torch.cat(adv_batch_X, 0)
+
+
+def partial_to_loss(model, x, y):
+    loss = model.aiLoss(torch.Tensor(x).cuda().view(1, -1), y.cuda().view(1), **vargs).mean(dim=0)
+    loss.backward()
+    return Info.out_y.grad[0][0].cpu().numpy()
+
+
 def train(epoch, models, decay=True):
     global total_batches_seen
+    global transform
 
     for model in models:
         model.train()
+        if args.adv_train > 0: Alphabet.partial_to_loss = partial(partial_to_loss, model)
 
     for batch_idx, (data, target) in enumerate(train_loader):
         if args.decay_fir and (total_batches_seen + 1) * args.batch_size % decay_step == 0:
@@ -290,11 +334,20 @@ def train(epoch, models, decay=True):
             data, target = data.cuda(), target.cuda()
 
         for model in models:
-            model.global_num += data.size()[0]
-
             timer = Timer("train a sample from " + model.name + " with " + model.ty.name, data.size()[0], False)
+            model.global_num += data.size()[0]
             lossy = 0
             with timer:
+                if args.adv_train > 0:
+                    Alphabet.partial_to_loss = partial(partial_to_loss, model)
+                    for p in model.parameters():
+                        if list(p.shape) == [56, 64]:
+                            Alphabet.embedding = p.data.cpu().numpy()
+                            break
+                    data = adv_batch(data, target)
+                    target = target.unsqueeze(-1).repeat((1, args.adv_train + 1)).view(-1)
+
+
                 for s in model.getSpec(data.to_dtype(), target, time=time):
                     model.optimizer.zero_grad()
                     loss = model.aiLoss(*s, time=time, **vargs).mean(dim=0)
@@ -332,7 +385,7 @@ def train(epoch, models, decay=True):
                     largest_domain) + '}: {:3} [{:7}/{} ({:.0f}%)] \tAvg sec/ex {:1.8f}\tLoss: {:.6f}').format(
                     model.name, model.ty.name,
                     epoch,
-                    batch_idx * len(data), len(train_loader.dataset), 100. * batch_idx / len(train_loader),
+                    batch_idx * len(data) // (args.adv_train + 1), len(train_loader.dataset), 100. * batch_idx / len(train_loader),
                     model.speed,
                     lossy))
 
@@ -360,7 +413,21 @@ num_tests = 0
 
 def test(models, epoch, f=None):
     global num_tests
+#     global transform
     num_tests += 1
+#     # generate adv attack examples
+#     def adv_batch(batch_X, batch_Y):
+#         Info.adv = True
+#         adv_batch_X = []
+#         arg_list = []
+#         for x, y in zip(batch_X, batch_Y):
+#             arg_list.append((chars.to_string(x), y, 1))
+#         for i, arg in enumerate(arg_list):
+#             ret = transform.beam_search_adversarial(*arg)
+#             adv_batch_X.append(torch.Tensor(chars.to_ids(ret[0][0])).cuda().unsqueeze(0).long())
+
+#         Info.adv = False
+#         return torch.cat(adv_batch_X, 0)
 
     class MStat:
         def __init__(self, model):
@@ -396,6 +463,13 @@ def test(models, epoch, f=None):
             data, target = data.cuda().to_dtype(), target.cuda()
 
         for m in model_stats:
+#             Alphabet.partial_to_loss = partial(partial_to_loss, m.model)
+#             if args.adv_train > 0:
+#                 for p in m.model.parameters():
+#                     if list(p.shape) == [56, 64]:
+#                         Alphabet.embedding = p.data.cpu().numpy()
+#                         break
+#                 data = adv_batch(data.long(), target)
 
             with torch.no_grad():
                 if args.test_func is not None:
@@ -655,6 +729,7 @@ best_origin = 1e10
 last_best = 0
 best = 1e10
 decay = True
+
 with h.mopen(args.dont_write, os.path.join(out_dir, "log.txt"), "w") as f:
     startTime = timer()
     for epoch in range(1, args.epochs + 1):

@@ -346,8 +346,10 @@ class EmbeddingWithSub(InferModule):
                 groups = [[] for _ in range(len(x))]
                 for i, data in enumerate(x):
                     subs = [[] for _ in range(len(data))]
-                    swaps = [True for _ in range(len(data) - 1)]
-                    all_set = len(swaps)
+                    swaps = [int(data[j + 1]) != int(data[j]) for j in range(len(data) - 1)]
+                    all_set = 0
+                    for j in range(len(data) - 1):
+                        if swaps[j]: all_set += 1
                     for (j, s) in enumerate(data):
                         s = int(s)
                         subs[j] = self.adjacent_keys[s]
@@ -446,7 +448,12 @@ class EmbeddingWithSub(InferModule):
             return ai.TaggedDomain(y, tag="magic" + str(groups_consider + 1))
         elif isinstance(x, torch.Tensor):  # it is a Point
             y = self.embed(x.long()).view(-1, 1, self.in_shape[0], self.dim)
-            return y
+            if S.Info.adv:
+                y.retain_grad()
+                S.Info.out_y = y
+                return S.Info.out_y
+            else:
+                return y
         elif x.isPoint():  # convert to Point, if the input is Point
             assert False
             y = x.center().vanillaTensorPart()
