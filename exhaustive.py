@@ -42,7 +42,7 @@ def SwapSub(a, b, x, is_numpy=False, batch_size=64):
                     else:
                         x2 = x.clone()
                         for swap_pos in swap_poss:
-                            swap_pytorch(x2[swap_pos], x2[swap_pos + 1])
+                            swap_pytorch(x2, swap_pos, swap_pos + 1)
                     for sub_pos in sub_poss:
                         x2[sub_pos] = adjacent_keys[int(x[sub_pos])][0]
                     if is_numpy:
