@@ -667,6 +667,7 @@ def buildNet(n):
 
 
 if not args.test is None:
+    EmbeddingWithSub.delta = args.train_delta
 
     test_name = None
 
