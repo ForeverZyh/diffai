@@ -414,22 +414,23 @@ class EmbeddingWithSub(InferModule):
                 all_set = 0
                 subs = [[] for _ in range(len(data))]
                 for (j, s) in enumerate(data):
-                    s = int(s)
-                    subs[j] = self.adjacent_keys[s]
-                    all_set += len(subs[j])
+                    if j not in swaps:
+                        s = int(s)
+                        subs[j] = self.adjacent_keys[s]
+                        all_set += len(subs[j])
 
                 while all_set > 0:
                     pre = -self.in_shape[0]
                     groups[i].append([])
                     for j in range(len(subs)):
-                        if len(subs[j]) > 0 and j not in swaps:
+                        if len(subs[j]) > 0:
                             if j - pre >= 20:  # 20 here is the kernal size + pooling size!
                                 pre = j
                                 groups[i][-1].append((j, subs[j][0]))
                                 subs[j] = subs[j][1:]
                                 all_set -= 1
-                    if sample_num < 100:
-                        random.shuffle(groups[i])
+                if sample_num < 100:
+                    random.shuffle(groups[i])
 
             groups_consider = 0
             for t in groups:
