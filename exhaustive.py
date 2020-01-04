@@ -1,7 +1,7 @@
 import numpy as np
 import itertools
 import torch
-import copy
+from utils import swap_pytorch
 
 
 dict_map = dict(np.load("./dataset/AG/dict_map.npy").item())
@@ -37,10 +37,12 @@ def SwapSub(a, b, x, is_numpy=False, batch_size=64):
                 for sub_poss in itertools.combinations(tuple(valid_sub_poss), sub):
                     if is_numpy:
                         x2 = X[current_id]
+                        for swap_pos in swap_poss:
+                            x2[swap_pos], x2[swap_pos + 1] = x2[swap_pos + 1], x2[swap_pos]
                     else:
                         x2 = x.clone()
-                    for swap_pos in swap_poss:
-                        x2[swap_pos], x2[swap_pos + 1] = x2[swap_pos + 1], x2[swap_pos]
+                        for swap_pos in swap_poss:
+                            swap_pytorch(x2[swap_pos], x2[swap_pos + 1])
                     for sub_pos in sub_poss:
                         x2[sub_pos] = adjacent_keys[int(x[sub_pos])][0]
                     if is_numpy:

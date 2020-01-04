@@ -24,6 +24,7 @@ import abc
 
 from torch.nn.modules.conv import _ConvNd
 from enum import Enum
+from utils import swap_pytorch
 
 
 class InferModule(nn.Module):
@@ -234,7 +235,7 @@ class EmbeddingWithSub(InferModule):
                 for i in range(d):
                     y1 = y.clone()
                     for (p, q) in self.swaps[t[i]]:
-                        y1[:, :, p, :], y1[:, :, q, :] = y1[:, :, q, :], y1[:, :, p, :]
+                        swap_pytorch(y1[:, :, p, :], y1[:, :, q, :])
                     ys.append(y1)
                 return ys
             def get_swaped_x(d):
@@ -245,7 +246,7 @@ class EmbeddingWithSub(InferModule):
                 for i in range(d):
                     x1 = xc.clone()
                     for (p, q) in self.swaps[t[i]]:
-                        x1[:, p], x1[:, q] = x1[:, q], x1[:, p]
+                        swap_pytorch(x1[:, p], x1[:, q])
                     xs.append(self.forward(ai.TaggedDomain(ai.HybridZonotope(x1, 0, None), g.HBox(0)), sample_num=6, swaps=[p, q]))
                 return xs
 
