@@ -227,6 +227,7 @@ parser.add_argument('--write-first', type=h.str2bool, nargs='?', const=True, def
 parser.add_argument('--test-size', type=int, default=2000, help='number of examples to test with')
 parser.add_argument('--test-func', type=str, default=None, help='exhaustive test function')
 parser.add_argument('--train-delta', type=int, default=None, help='train the number of delta in each sentence')
+parser.add_argument('--train-ratio', type=float, default=0.75, help='train ratio of the abstract loss')
 parser.add_argument('--adv-train', type=int, default=0, help='adv training combined abstract training')
 
 parser.add_argument('-r', '--regularize', type=float, default=None, help='use regularization')
@@ -267,7 +268,7 @@ decay_step = 4000
 
 if args.decay_fir:
     decay_delta = args.train_delta / (args.epochs * 0.8 * len(train_loader) * args.batch_size / decay_step)
-    decay_ratio = 0.5 / (args.epochs * 0.8 * len(train_loader) * args.batch_size / decay_step)
+    decay_ratio = args.train_ratio / (args.epochs * 0.8 * len(train_loader) * args.batch_size / decay_step)
 else:
     decay_delta = 0
     decay_ratio = 0
@@ -322,11 +323,11 @@ def train(epoch, models, decay=True):
                 if isinstance(model.ty, goals.DList) and len(model.ty.al) == 2 and decay:
                     for (i, a) in enumerate(model.ty.al):
                         if i == 1:
-                            t = Const(min(a[1].getVal() + decay_ratio, 0.75))
+                            t = Const(min(a[1].getVal() + decay_ratio, args.train_ratio))
                             print(("ratio: {}").format(str(t)))
                             model.ty.al[i] = (a[0], t)
                         else:
-                            model.ty.al[i] = (a[0], Const(max(a[1].getVal() - decay_ratio, 0.25)))
+                            model.ty.al[i] = (a[0], Const(max(a[1].getVal() - decay_ratio, 1 - args.train_ratio)))
 
         total_batches_seen += 1
         time = float(total_batches_seen) / len(train_loader)
