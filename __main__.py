@@ -4,6 +4,7 @@ import past
 import six
 import copy
 from functools import partial
+import time as sys_time
 
 from timeit import default_timer as timer
 from datetime import datetime
@@ -229,6 +230,7 @@ parser.add_argument('--test-func', type=str, default=None, help='exhaustive test
 parser.add_argument('--train-delta', type=int, default=None, help='train the number of delta in each sentence')
 parser.add_argument('--train-ratio', type=float, default=0.75, help='train ratio of the abstract loss')
 parser.add_argument('--adv-train', type=int, default=0, help='adv training combined abstract training')
+parser.add_argument('--adv-test', type=bool, default=False, help='adv testing')
 
 parser.add_argument('-r', '--regularize', type=float, default=None, help='use regularization')
 parser.add_argument("--gpu_id", type=str, default=None, help="specify gpu id, None for all")
@@ -335,20 +337,26 @@ def train(epoch, models, decay=True):
             data, target = data.cuda(), target.cuda()
 
         for model in models:
-            timer = Timer("train a sample from " + model.name + " with " + model.ty.name, data.size()[0], False)
+#             model = parallel_model.module
             model.global_num += data.size()[0]
             lossy = 0
+            adv_time = sys_time.time()
+            if args.adv_train > 0:
+                Alphabet.partial_to_loss = partial(partial_to_loss, model)
+                flag = False
+                for p in model.parameters():
+                    if list(p.shape) == [56, 64]:
+                        Alphabet.embedding = p.data.cpu().numpy()
+                        flag = True
+                        break
+                assert flag
+                data = adv_batch(data, target)
+                target = target.unsqueeze(-1).repeat((1, args.adv_train + 1)).view(-1)
+                
+            adv_time = sys_time.time() - adv_time
+            
+            timer = Timer("train a sample from " + model.name + " with " + model.ty.name, data.size()[0], False)
             with timer:
-                if args.adv_train > 0:
-                    Alphabet.partial_to_loss = partial(partial_to_loss, model)
-                    for p in model.parameters():
-                        if list(p.shape) == [56, 64]:
-                            Alphabet.embedding = p.data.cpu().numpy()
-                            break
-                    data = adv_batch(data, target)
-                    target = target.unsqueeze(-1).repeat((1, args.adv_train + 1)).view(-1)
-
-
                 for s in model.getSpec(data.to_dtype(), target, time=time):
                     model.optimizer.zero_grad()
                     loss = model.aiLoss(*s, time=time, **vargs).mean(dim=0)
@@ -379,7 +387,7 @@ def train(epoch, models, decay=True):
                         if p is not None and torch.isnan(p).any():
                             raise Exception("Such nan in vals after clip")
 
-            model.addSpeed(timer.getUnitTime())
+            model.addSpeed(timer.getUnitTime() + adv_time)
 
             if batch_idx % args.log_interval == 0:
                 print(('Train Epoch {:12} {:' + str(
@@ -414,21 +422,21 @@ num_tests = 0
 
 def test(models, epoch, f=None):
     global num_tests
-#     global transform
+    global transform
     num_tests += 1
 #     # generate adv attack examples
-#     def adv_batch(batch_X, batch_Y):
-#         Info.adv = True
-#         adv_batch_X = []
-#         arg_list = []
-#         for x, y in zip(batch_X, batch_Y):
-#             arg_list.append((chars.to_string(x), y, 1))
-#         for i, arg in enumerate(arg_list):
-#             ret = transform.beam_search_adversarial(*arg)
-#             adv_batch_X.append(torch.Tensor(chars.to_ids(ret[0][0])).cuda().unsqueeze(0).long())
+    def adv_batch(batch_X, batch_Y):
+        Info.adv = True
+        adv_batch_X = []
+        arg_list = []
+        for x, y in zip(batch_X, batch_Y):
+            arg_list.append((chars.to_string(x), y, 1))
+        for i, arg in enumerate(arg_list):
+            ret = transform.beam_search_adversarial(*arg)
+            adv_batch_X.append(torch.Tensor(chars.to_ids(ret[0][0])).cuda().unsqueeze(0).long())
 
-#         Info.adv = False
-#         return torch.cat(adv_batch_X, 0)
+        Info.adv = False
+        return torch.cat(adv_batch_X, 0)
 
     class MStat:
         def __init__(self, model):
@@ -464,13 +472,16 @@ def test(models, epoch, f=None):
             data, target = data.cuda().to_dtype(), target.cuda()
 
         for m in model_stats:
-#             Alphabet.partial_to_loss = partial(partial_to_loss, m.model)
-#             if args.adv_train > 0:
-#                 for p in m.model.parameters():
-#                     if list(p.shape) == [56, 64]:
-#                         Alphabet.embedding = p.data.cpu().numpy()
-#                         break
-#                 data = adv_batch(data.long(), target)
+            if args.adv_test:
+                Alphabet.partial_to_loss = partial(partial_to_loss, m.model)
+                flag = False
+                for p in m.model.parameters():
+                    if list(p.shape) == [56, 64]:
+                        Alphabet.embedding = p.data.cpu().numpy()
+                        flag = True
+                        break
+                assert flag
+                data = adv_batch(data.long(), target)
 
             with torch.no_grad():
                 if args.test_func is not None:

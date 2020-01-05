@@ -340,7 +340,7 @@ class EmbeddingWithSub(InferModule):
             elif x.label[-len("Swap_First"):] == "Swap_First":
                 d = int(x.label[:-len("Swap_First")])
                 xs = get_swaped_x(d)
-                return ai.ListDomain([ai.TaggedDomain(y, g.DList.MLoss(1.0 / (d + 1))) for x in xs])
+                return ai.ListDomain([ai.TaggedDomain(x, g.DList.MLoss(1.0 / (d + 1))) for x in xs])
             elif x.label[-len("SwapSub"):] == "SwapSub":
                 a, b = [int(c) for c in x.label[:-len("SwapSub")].split()]
                 x = xc.vanillaTensorPart().long()
