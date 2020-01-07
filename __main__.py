@@ -387,7 +387,7 @@ def train(epoch, models, decay=True):
                         if p is not None and torch.isnan(p).any():
                             raise Exception("Such nan in vals after clip")
 
-            model.addSpeed(timer.getUnitTime() + adv_time)
+            model.addSpeed(timer.getUnitTime() + adv_time / len(data) * (args.adv_train + 1))
 
             if batch_idx % args.log_interval == 0:
                 print(('Train Epoch {:12} {:' + str(
