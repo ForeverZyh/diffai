@@ -140,11 +140,104 @@ class Top(nn.Module):
         return self.regularize * r
 
     def aiLoss(self, dom, target, **args):
-        r = self(dom)
+        if "parallel" in args:
+            r = args["parallel"](dom)
+        else:
+            r = self(dom)
+
         return self.regLoss() + r.loss(target=target, **args)
 
     def printNet(self, f):
         self.net.printNet(f)
+
+
+class DataParallelAI(nn.DataParallel):
+    def __init__(self, module, device_ids=None, output_device=None, dim=0):
+        super(DataParallelAI, self).__init__(module, device_ids, output_device, dim)
+        
+    def scatter(self, inputs, kwargs, device_ids):
+#         print(len(device_ids))
+        def inner_scatter(inputs, target_gpus, dim=0):
+            if isinstance(inputs, tuple) and len(inputs) == 1:
+                inputs = inputs[0]
+            if isinstance(inputs, ai.ListDomain):
+                rets = [type(inputs)([]) for _ in range(len(device_ids))]
+                for (i, a) in enumerate(inputs.al):
+                    tmp_rets = inner_scatter(a, target_gpus, dim)
+                    assert len(tmp_rets) == len(rets)
+                    for ret, tmp_ret in zip(rets, tmp_rets):
+                        ret.al.append(tmp_ret)
+#                 print(rets)
+                return rets
+            elif isinstance(inputs, ai.TaggedDomain):
+                tmp_rets = inner_scatter(inputs.a, target_gpus, dim)
+                rets = []
+                for tmp_ret in tmp_rets:
+                    rets.append(type(inputs)(tmp_ret, inputs.tag))
+                return rets
+            elif isinstance(inputs, ai.LabeledDomain):
+                tmp_rets = inner_scatter(inputs.o, target_gpus, dim)
+                rets = []
+                for tmp_ret in tmp_rets:
+                    rets.append(type(inputs)(inputs.label))
+                    rets[-1].box(tmp_ret)
+                return rets
+            else:
+                return nn.parallel.scatter_gather.scatter(inputs, target_gpus, dim)
+        
+        def scatter_kwargs(inputs, kwargs, target_gpus, dim=0):
+            r"""Scatter with support for kwargs dictionary"""
+            inputs = inner_scatter(inputs, target_gpus, dim) if inputs else []
+            kwargs = inner_scatter(kwargs, target_gpus, dim) if kwargs else []
+            if len(inputs) < len(kwargs):
+                inputs.extend([() for _ in range(len(kwargs) - len(inputs))])
+            elif len(kwargs) < len(inputs):
+                kwargs.extend([{} for _ in range(len(inputs) - len(kwargs))])
+            inputs = tuple(inputs)
+            kwargs = tuple(kwargs)
+            return inputs, kwargs
+        
+        return scatter_kwargs(inputs, kwargs, device_ids, dim=self.dim)
+    
+#     def forward(self, *inputs, **kwargs):
+#         if not self.device_ids:
+#             return self.module(*inputs, **kwargs)
+#         inputs, kwargs = self.scatter(inputs, kwargs, self.device_ids)
+#         if len(self.device_ids) == 1:
+#             return self.module(*inputs[0], **kwargs[0])
+#         replicas = self.replicate(self.module, self.device_ids[:len(inputs)])
+#         outputs = self.parallel_apply(replicas, inputs, kwargs)
+#         return self.gather(outputs, self.output_device)
+    
+    def gather(self, outputs, target_device, dim=0):
+        def inner_gather(outputs, target_gpus, dim=0):
+            if isinstance(outputs[0], ai.ListDomain):
+                ret = type(outputs[0])([])
+                for i in range(len(outputs[0].al)):
+                    t = [o.al[i] for o in outputs]
+                    tmp_rets = inner_gather(t, target_gpus, dim)
+                    ret.al.append(tmp_rets)
+
+                return ret
+            elif isinstance(outputs[0], ai.TaggedDomain):
+                t = [o.a for o in outputs]
+                tmp_rets = inner_gather(t, target_gpus, dim)
+                return type(outputs[0])(tmp_rets, outputs[0].tag)
+            elif isinstance(outputs[0], ai.LabeledDomain):
+                t = [ot.o for ot in outputs]
+                tmp_rets = inner_gather(t, target_gpus, dim)
+                ret = type(outputs[0])(outputs[0].label)
+                ret.box(tmp_rets)
+                return ret
+            elif isinstance(outputs[0], ai.HybridZonotope):
+                head = inner_gather([o.head for o in outputs], target_gpus, dim)
+                errors = None if outputs[0].errors is None else inner_gather([o.errors for o in outputs], target_gpus, 1)
+                beta = None if outputs[0].beta is None else inner_gather([o.beta for o in outputs], target_gpus, dim)
+                return type(outputs[0])(head, beta, errors)
+            else:
+                return nn.parallel.scatter_gather.gather(outputs, target_gpus, dim)
+            
+        return inner_gather(outputs, target_device, dim)
 
 
 # Training settings
@@ -231,6 +324,7 @@ parser.add_argument('--train-delta', type=int, default=None, help='train the num
 parser.add_argument('--train-ratio', type=float, default=0.75, help='train ratio of the abstract loss')
 parser.add_argument('--adv-train', type=int, default=0, help='adv training combined abstract training')
 parser.add_argument('--adv-test', type=bool, default=False, help='adv testing')
+parser.add_argument('--resume-epoch', type=int, default=0, help='the epoch from resuming')
 
 parser.add_argument('-r', '--regularize', type=float, default=None, help='use regularization')
 parser.add_argument("--gpu_id", type=str, default=None, help="specify gpu id, None for all")
@@ -267,10 +361,13 @@ vargs = vars(args)
 
 total_batches_seen = 0
 decay_step = 4000
+resume_ratio = 0
 
 if args.decay_fir:
     decay_delta = args.train_delta / (args.epochs * 0.8 * len(train_loader) * args.batch_size / decay_step)
     decay_ratio = args.train_ratio / (args.epochs * 0.8 * len(train_loader) * args.batch_size / decay_step)
+    EmbeddingWithSub.delta = decay_delta * (args.resume_epoch * len(train_loader) * args.batch_size / decay_step)
+    resume_ratio = decay_ratio * (args.resume_epoch * len(train_loader) * args.batch_size / decay_step)
 else:
     decay_delta = 0
     decay_ratio = 0
@@ -312,13 +409,30 @@ def partial_to_loss(model, x, y):
 def train(epoch, models, decay=True):
     global total_batches_seen
     global transform
-
+    
+    gpu_num = torch.cuda.device_count()
+    print('GPU NUM: {:2d}'.format(gpu_num))
+    parellel_models = []
     for model in models:
         model.train()
+        parellel_models.append(DataParallelAI(model, list(range(gpu_num))))
+        parellel_models[-1].cuda()
         if args.adv_train > 0: Alphabet.partial_to_loss = partial(partial_to_loss, model)
 
     for batch_idx, (data, target) in enumerate(train_loader):
-        if args.decay_fir and (total_batches_seen + 1) * args.batch_size % decay_step == 0:
+        if args.decay_fir and total_batches_seen == 0 and resume_ratio > 0:
+            print(("delta: {}").format(EmbeddingWithSub.delta))
+            for model in models:
+                if isinstance(model.ty, goals.DList) and len(model.ty.al) == 2 and decay:
+                    for (i, a) in enumerate(model.ty.al):
+                        if i == 1:
+                            t = Const(min(a[1].getVal() + resume_ratio, args.train_ratio))
+                            print(("ratio: {}").format(str(t)))
+                            model.ty.al[i] = (a[0], t)
+                        else:
+                            model.ty.al[i] = (a[0], Const(max(a[1].getVal() - resume_ratio, 1 - args.train_ratio)))
+                            
+        elif args.decay_fir and (total_batches_seen + 1) * args.batch_size % decay_step == 0:
             EmbeddingWithSub.delta = min(EmbeddingWithSub.delta + decay_delta, args.train_delta)
             print(("delta: {}").format(EmbeddingWithSub.delta))
             for model in models:
@@ -336,8 +450,9 @@ def train(epoch, models, decay=True):
         if h.use_cuda:
             data, target = data.cuda(), target.cuda()
 
-        for model in models:
-#             model = parallel_model.module
+#         for model in models:
+        for parallel_model in parellel_models:
+            model = parallel_model.module
             model.global_num += data.size()[0]
             lossy = 0
             adv_time = sys_time.time()
@@ -359,7 +474,7 @@ def train(epoch, models, decay=True):
             with timer:
                 for s in model.getSpec(data.to_dtype(), target, time=time):
                     model.optimizer.zero_grad()
-                    loss = model.aiLoss(*s, time=time, **vargs).mean(dim=0)
+                    loss = model.aiLoss(*s, time=time, **vargs, parallel=parallel_model).mean(dim=0)
                     lossy += loss.detach().item()
                     loss.backward()
                     torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
@@ -406,12 +521,13 @@ def train(epoch, models, decay=True):
         if h.use_cuda:
             data, target = data.cuda(), target.cuda()
 
-        for model in models:
+        for parallel_model in parellel_models:
+            model = parallel_model.module
             for s in model.getSpec(data.to_dtype(), target):
-                loss = model.aiLoss(*s, **vargs).mean(dim=0)
+                loss = model.aiLoss(*s, **vargs, parallel=parallel_model).mean(dim=0)
                 val += loss.detach().item()
 
-            loss = model.aiLoss(data, target, **vargs).mean(dim=0)
+            loss = model.aiLoss(data, target, **vargs, parallel=parallel_model).mean(dim=0)
             val_origin += loss.detach().item()
 
     return val_origin / batch_cnt, val / batch_cnt
@@ -678,7 +794,8 @@ def buildNet(n):
 
 
 if not args.test is None:
-    EmbeddingWithSub.delta = args.train_delta
+    if args.resume_epoch == 0:
+        EmbeddingWithSub.delta = args.train_delta
 
     test_name = None
 
@@ -745,7 +862,7 @@ decay = True
 
 with h.mopen(args.dont_write, os.path.join(out_dir, "log.txt"), "w") as f:
     startTime = timer()
-    for epoch in range(1, args.epochs + 1):
+    for epoch in range(args.resume_epoch + 1, args.epochs + 1):
         if f is not None:
             f.flush()
         if (epoch - 1) % args.test_freq == 0 and (epoch > 1 or args.test_first):
