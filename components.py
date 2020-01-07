@@ -890,9 +890,9 @@ class Seq(InferModule):
         return in_shape
 
     def forward(self, x, **kargs):
-
-        for l in self.layers:
-            x = l(x, **kargs)
+        return self.net(x, **kargs)
+#         for l in self.layers:
+#             x = l(x, **kargs)
         return x
 
     def clip_norm(self):
