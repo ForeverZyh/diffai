@@ -182,6 +182,14 @@ class DataParallelAI(nn.DataParallel):
                     rets.append(type(inputs)(inputs.label))
                     rets[-1].box(tmp_ret)
                 return rets
+            elif isinstance(inputs, ai.HybridZonotope):
+                head = inner_scatter(inputs.head, target_gpus, dim)
+                errors = None if inputs.errors is None else inner_scatter(inputs.errors, target_gpus, 1)
+                beta = None if inputs.beta is None else inner_scatter(inputs.beta, target_gpus, dim)
+                rets = []
+                for i in range(len(head)):
+                    rets.append(type(inputs)(head[i], beta[i] if beta is not None else None, errors[i] if errors is not None else None))
+                return rets
             else:
                 return nn.parallel.scatter_gather.scatter(inputs, target_gpus, dim)
         
