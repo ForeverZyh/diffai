@@ -1,7 +1,9 @@
 import numpy as np
 import itertools
 import torch
+
 from utils import swap_pytorch
+from dataset.dataset_loader import SSTWordLevel, Glove
 
 
 dict_map = dict(np.load("./dataset/AG/dict_map.npy").item())
@@ -56,6 +58,57 @@ def SwapSub(a, b, x, is_numpy=False, batch_size=64):
                         if len(X) == batch_size:
                             yield torch.cat(X, 0).cuda()
                             X = []
+    if len(X) > 0:
+        if is_numpy:
+            yield X
+        else:
+            yield torch.cat(X, 0).cuda()
+
+            
+def SwapSubWord(a, b, x, is_numpy=False, batch_size=64):
+    SSTWordLevel.build()
+    if not is_numpy:
+        x = x.cpu()
+        X = []
+    else:
+        X = np.tile(np.expand_dims(x, 0), (batch_size, 1))
+        current_id = 0
+    valid_swap_poss = [i for i in range(len(x) - 1) if int(x[i]) != int(x[i + 1])]
+    for swap in range(a, -1, -1):
+        for swap_poss in itertools.combinations(tuple(valid_swap_poss), swap):
+            # precheck whether overlape
+            overlape = False
+            for i in range(len(swap_poss) - 1):
+                if swap_poss[i + 1] - swap_poss[i] == 1:
+                    overlape = True
+            if overlape:
+                continue
+            valid_sub_poss = [i for i in range(len(x)) if (i not in swap_poss) and (i - 1 not in swap_poss) and Glove.id2str[int(x[i])] in SSTWordLevel.synonym_dict]
+            for sub in range(b, -1, -1):
+                for sub_poss in itertools.combinations(tuple(valid_sub_poss), sub):
+                    for sub_pos in sub_poss:
+                        strs = list(SSTWordLevel.synonym_dict[Glove.id2str[int(x[sub_pos])]])
+                        for sub_str in strs:
+                            if is_numpy:
+                                x2 = X[current_id]
+                                for swap_pos in swap_poss:
+                                    x2[swap_pos], x2[swap_pos + 1] = x2[swap_pos + 1], x2[swap_pos]
+                                x2[sub_pos] = Glove.str2id(sub_str)
+                                current_id += 1
+                                if current_id >= batch_size:
+                                    yield X
+                                    X = np.tile(np.expand_dims(x, 0), (batch_size, 1))
+                                    current_id = 0
+                            else:
+                                x2 = x.clone()
+                                for swap_pos in swap_poss:
+                                    swap_pytorch(x2, swap_pos, swap_pos + 1)
+                                x2[sub_pos] = Glove.str2id(sub_str)
+                                X.append(x2.unsqueeze(0))
+                                if len(X) == batch_size:
+                                    yield torch.cat(X, 0).cuda()
+                                    X = []
+
     if len(X) > 0:
         if is_numpy:
             yield X
