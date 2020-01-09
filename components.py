@@ -25,6 +25,7 @@ import abc
 from torch.nn.modules.conv import _ConvNd
 from enum import Enum
 from utils import swap_pytorch
+from dataset.dataset_loader import SSTWordLevel, Glove
 
 
 class InferModule(nn.Module):
@@ -155,17 +156,17 @@ def getShapeConvTranspose(in_shape, conv_shape, stride=1, padding=0, out_padding
 
 
 class Embedding(InferModule):
-    def init(self, in_shape, vocab, dim, **kargs):
-        self.vocab = vocab
-        self.dim = dim
+    def init(self, in_shape, **kargs):
+        self.vocab, self.dim = Glove.embedding.shape
         self.in_shape = in_shape
-        self.embed = nn.Embedding(vocab, dim)
-
-        return [1, in_shape[0], dim]
+        self.embed = nn.Embedding(self.vocab, self.dim)
+        self.embed.weight.data.copy_(torch.from_numpy(Glove.embedding))
+        self.embed.weight.requires_grad = False
+        
+        return [1, in_shape[0], self.dim]
 
     def forward(self, x, **kargs):
         y = self.embed(x.long()).view(-1, 1, self.in_shape[0], self.dim)
-        # print(x)
         return y
 
     def neuronCount(self):
@@ -658,6 +659,55 @@ class Conv2D(InferModule):
 
     def neuronCount(self):
         return 0
+    
+    
+class Conv2D4Embed(InferModule):
+
+    def init(self, in_shape, out_channels, kernel_size, stride=1, global_args=None, bias=True, padding=0,
+             activation="ReLU", **kargs):
+        self.prev = in_shape
+        self.in_channels = in_shape[0]
+        self.out_channels = out_channels
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.padding = padding
+        self.activation = activation
+        self.use_softplus = h.default(global_args, 'use_softplus', False)
+
+        weights_shape = (self.out_channels, self.in_channels, kernel_size, in_shape[-1])
+        self.weight = torch.nn.Parameter(torch.Tensor(*weights_shape))
+        if bias:
+            self.bias = torch.nn.Parameter(torch.Tensor(weights_shape[0]))
+        else:
+            self.bias = None  # h.zeros(weights_shape[0])
+
+        outshape = getShapeConv(in_shape, (out_channels, kernel_size, in_shape[-1]), stride, padding)
+        return outshape
+
+    def forward(self, input, **kargs):
+        return input.conv2d(self.weight, bias=self.bias, stride=self.stride, padding=self.padding)
+
+    def printNet(self, f):  # only complete if we've forwardt stride=1
+        print("Conv2D", file=f)
+        sz = list(self.prev)
+        print(self.activation + ", filters={}, kernel_size={}, input_shape={}, stride={}, padding={}".format(
+            self.out_channels, [self.kernel_size, self.prev[-1]], list(reversed(sz)), [self.stride, self.stride],
+            self.padding), file=f)
+        print(h.printListsNumpy([[list(p) for p in l] for l in self.weight.permute(2, 3, 1, 0).data]), file=f)
+        print(h.printNumpy(self.bias if self.bias is not None else h.dten(self.out_channels)), file=f)
+
+    def showNet(self, t=""):
+        sz = list(self.prev)
+        print(t + "Conv2D, filters={}, kernel_size={}, input_shape={}, stride={}, padding={}".format(self.out_channels,
+                                                                                                     [self.kernel_size,
+                                                                                                      self.prev[-1]],
+                                                                                                     list(reversed(sz)),
+                                                                                                     [self.stride,
+                                                                                                      self.stride],
+                                                                                                     self.padding))
+
+    def neuronCount(self):
+        return 0
 
 
 class ConvTranspose2D(InferModule):
@@ -735,6 +785,31 @@ class AvgPool2D(InferModule):
     def printNet(self, f):
         print("AvgPool2D stride={}, kernel_size={}, input_shape={}".format(list(self.stride), list(self.shape[2:]),
                                                                            list(self.prev[1:] + self.prev[:1])), file=f)
+
+    def neuronCount(self):
+        return h.product(self.outShape)
+    
+    
+class AvgPool2D4Embed(InferModule):
+    def init(self, in_shape, kernel_size, stride=None, **kargs):
+        self.prev = in_shape
+        self.kernel_size = kernel_size
+        self.stride = kernel_size if stride is None else stride
+        out_size = getShapeConv(in_shape, (in_shape[0], kernel_size, 1), self.stride, padding=0)
+        return out_size
+
+    def forward(self, x, **kargs):
+        if h.product(x.size()[2:]) == 1:
+            return x
+        return x.avg_pool2d(kernel_size=(self.kernel_size, 1), stride=self.stride, padding=0)
+
+    def printNet(self, f):
+        print("AvgPool2D stride={}, kernel_size={}, input_shape={}".format(list(self.stride), list((self.kernel_size, 1)),
+                                                                           list(self.prev[1:] + self.prev[:1])), file=f)
+    def showNet(self, t=""):
+        sz = list(self.prev)
+        print(t + "AvgPool2D stride={}, kernel_size={}, input_shape={}".format(self.stride, list((self.kernel_size, 1)),
+                                                                           list(self.prev[1:] + self.prev[:1])))
 
     def neuronCount(self):
         return h.product(self.outShape)

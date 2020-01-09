@@ -43,6 +43,7 @@ from exhaustive import *
 from utils import Dict, Multiprocessing, MultiprocessingWithoutPipe
 from DSL.transformations import REGEX, Transformation, INS, tUnion, SUB, DEL, Composition, Union, SWAP
 from DSL.Alphabet import Alphabet
+from dataset.dataset_loader import SSTWordLevel, Glove
 
 import math
 
@@ -342,6 +343,9 @@ args = parser.parse_args()
 if args.gpu_id is not None:
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_id
 
+if args.dataset == "SST2":
+    SSTWordLevel.build()
+
 largest_domain = max([len(h.catStrs(d)) for d in (args.domain)])
 largest_test_domain = max([len(h.catStrs(d)) for d in (args.test_domain)])
 
@@ -359,9 +363,14 @@ val_loader = h.loadDataset(args.dataset, args.batch_size, True, False, True)
 test_loader = h.loadDataset(args.dataset, args.test_batch_size, False, False)
 
 input_dims = train_loader.dataset[0][0].size()
-num_classes = (int(max(getattr(train_loader.dataset,
-                               'train_labels' if args.dataset != "SVHN" else 'labels'))) + 1) if args.dataset != "AG" else 4
 
+if args.dataset == "AG":
+    num_classes = 4
+elif args.dataset == "SST2":
+    num_classes = 2
+else:
+    num_classes = int(max(getattr(train_loader.dataset, 'train_labels' if args.dataset != "SVHN" else 'labels'))) + 1
+    
 print("input_dims: ", input_dims)
 print("Num classes: ", num_classes)
 
@@ -380,15 +389,38 @@ else:
     decay_delta = 0
     decay_ratio = 0
 
-Alphabet.set_char_model()
-Alphabet.max_len = 300
-Alphabet.padding = " "
-dict_map = dict(np.load("./dataset/AG/dict_map.npy").item())
-Alphabet.set_alphabet(dict_map, np.zeros((56, 64)))
-keep_same = REGEX(r".*")
-chars = Dict(dict_map)
-swap = SWAP(lambda c: True, lambda c: True)
-transform = Transformation(keep_same, swap, keep_same)
+if args.dataset == "AG":
+    Alphabet.set_char_model()
+    Alphabet.max_len = 300
+    Alphabet.padding = " "
+    dict_map = dict(np.load("./dataset/AG/dict_map.npy").item())
+    Alphabet.set_alphabet(dict_map, np.zeros((56, 64)))
+    keep_same = REGEX(r".*")
+    chars = Dict(dict_map)
+    swap = SWAP(lambda c: True, lambda c: True)
+    transform = Transformation(keep_same, swap, keep_same)
+elif args.dataset == "SST2":
+    Alphabet.set_word_model()
+    Alphabet.max_len = SSTWordLevel.max_len
+    Alphabet.padding = "_UNK_"
+    dict_map = Glove.str2id
+    Alphabet.set_alphabet(dict_map, Glove.embedding)
+    keep_same = REGEX(r".*")
+    sub = Transformation(keep_same,
+                         SUB(lambda c: c in SSTWordLevel.synonym_dict, lambda c: SSTWordLevel.synonym_dict[c]),
+                         keep_same)
+    swap = Transformation(keep_same,
+                         SWAP(lambda c: True, lambda c: True),
+                         keep_same)
+    delete = Transformation(keep_same,
+                         DEL(lambda c: c in ["a", "the", "and", "to", "of"]),
+                         keep_same)
+    ins = Transformation(keep_same,
+                         INS(lambda c: c in ["a", "the", "and", "to", "of"]),
+                         keep_same)
+    # transform = Composition(sub, swap, ins, delete)
+    transform = Composition(swap, sub)
+
 # generate adv attack examples
 def adv_batch(batch_X, batch_Y):
     Info.adv = True
@@ -423,8 +455,9 @@ def train(epoch, models, decay=True):
     parellel_models = []
     for model in models:
         model.train()
-        parellel_models.append(DataParallelAI(model, list(range(gpu_num))))
-        parellel_models[-1].cuda()
+        if gpu_num > 1:
+            parellel_models.append(DataParallelAI(model, list(range(gpu_num))))
+            parellel_models[-1].cuda()
         if args.adv_train > 0: Alphabet.partial_to_loss = partial(partial_to_loss, model)
 
     for batch_idx, (data, target) in enumerate(train_loader):
@@ -458,9 +491,13 @@ def train(epoch, models, decay=True):
         if h.use_cuda:
             data, target = data.cuda(), target.cuda()
 
-#         for model in models:
-        for parallel_model in parellel_models:
-            model = parallel_model.module
+        for model_id in range(len(models)):
+            if gpu_num > 1:
+                model = parallel_models[model_id].module
+                parallel_model = parallel_models[model_id]
+            else:
+                model = models[model_id]
+                parallel_model = model
             model.global_num += data.size()[0]
             lossy = 0
             adv_time = sys_time.time()
@@ -487,6 +524,8 @@ def train(epoch, models, decay=True):
                     loss.backward()
                     torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
                     for p in model.parameters():
+                        if not p.requires_grad:
+                            continue
                         if p is not None and torch.isnan(p).any():
                             print("Such nan in vals")
                         if p is not None and p.grad is not None and torch.isnan(p.grad).any():
@@ -498,6 +537,8 @@ def train(epoch, models, decay=True):
                     model.optimizer.step()
 
                     for p in model.parameters():
+                        if not p.requires_grad:
+                            continue
                         if p is not None and torch.isnan(p).any():
                             print("Such nan in vals after grad")
                             stdv = 1 / math.sqrt(h.product(p.data.shape))
@@ -507,6 +548,8 @@ def train(epoch, models, decay=True):
                     if args.clip_norm:
                         model.clip_norm()
                     for p in model.parameters():
+                        if not p.requires_grad:
+                            continue
                         if p is not None and torch.isnan(p).any():
                             raise Exception("Such nan in vals after clip")
 
@@ -529,8 +572,14 @@ def train(epoch, models, decay=True):
         if h.use_cuda:
             data, target = data.cuda(), target.cuda()
 
-        for parallel_model in parellel_models:
-            model = parallel_model.module
+        for model_id in range(len(models)):
+            if gpu_num > 1:
+                model = parallel_models[model_id].module
+                parallel_model = parallel_models[model_id]
+            else:
+                model = models[model_id]
+                parallel_model = model
+                
             for s in model.getSpec(data.to_dtype(), target):
                 loss = model.aiLoss(*s, **vargs, parallel=parallel_model).mean(dim=0)
                 val += loss.detach().item()
@@ -849,7 +898,7 @@ for n in args.net:
 
     print("Name: ", net_create.__name__)
     print("Number of Neurons (relus): ", net.neuronCount())
-    print("Number of Parameters: ", sum([h.product(s.size()) for s in net.parameters()]))
+    print("Number of Parameters: ", sum([h.product(s.size()) for s in net.parameters() if s.requires_grad]))
     print("Depth (relu layers): ", net.depth())
     print()
     net.showNet()
