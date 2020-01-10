@@ -452,12 +452,12 @@ def train(epoch, models, decay=True):
     
     gpu_num = torch.cuda.device_count()
     print('GPU NUM: {:2d}'.format(gpu_num))
-    parellel_models = []
+    parallel_models = []
     for model in models:
         model.train()
         if gpu_num > 1:
-            parellel_models.append(DataParallelAI(model, list(range(gpu_num))))
-            parellel_models[-1].cuda()
+            parallel_models.append(DataParallelAI(model, list(range(gpu_num))))
+            parallel_models[-1].cuda()
         if args.adv_train > 0: Alphabet.partial_to_loss = partial(partial_to_loss, model)
 
     for batch_idx, (data, target) in enumerate(train_loader):
