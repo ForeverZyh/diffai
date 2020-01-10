@@ -41,7 +41,7 @@ from scheduling import *
 from exhaustive import *
 
 from utils import Dict, Multiprocessing, MultiprocessingWithoutPipe
-from DSL.transformations import REGEX, Transformation, INS, tUnion, SUB, DEL, Composition, Union, SWAP
+from DSL.transformations import REGEX, Transformation, INS, tUnion, SUB, DEL, Composition, Union, SWAP, DUP
 from DSL.Alphabet import Alphabet
 from dataset.dataset_loader import SSTWordLevel, Glove
 
@@ -334,6 +334,7 @@ parser.add_argument('--train-ratio', type=float, default=0.75, help='train ratio
 parser.add_argument('--adv-train', type=int, default=0, help='adv training combined abstract training')
 parser.add_argument('--adv-test', type=bool, default=False, help='adv testing')
 parser.add_argument('--resume-epoch', type=int, default=0, help='the epoch from resuming')
+parser.add_argument('--transform', type=str, default=None, help='transformation when doing adversarial')
 
 parser.add_argument('-r', '--regularize', type=float, default=None, help='use regularization')
 parser.add_argument("--gpu_id", type=str, default=None, help="specify gpu id, None for all")
@@ -389,6 +390,7 @@ else:
     decay_delta = 0
     decay_ratio = 0
 
+transform = None
 if args.dataset == "AG":
     Alphabet.set_char_model()
     Alphabet.max_len = 300
@@ -396,9 +398,10 @@ if args.dataset == "AG":
     dict_map = dict(np.load("./dataset/AG/dict_map.npy").item())
     Alphabet.set_alphabet(dict_map, np.zeros((56, 64)))
     keep_same = REGEX(r".*")
-    chars = Dict(dict_map)
-    swap = SWAP(lambda c: True, lambda c: True)
-    transform = Transformation(keep_same, swap, keep_same)
+    swap = Transformation(keep_same, SWAP(lambda c: True, lambda c: True), keep_same)
+    if args.adv_train > 0:
+        transform = eval(args.transform)
+
 elif args.dataset == "SST2":
     Alphabet.set_word_model()
     Alphabet.max_len = SSTWordLevel.max_len
@@ -409,17 +412,14 @@ elif args.dataset == "SST2":
     sub = Transformation(keep_same,
                          SUB(lambda c: c in SSTWordLevel.synonym_dict, lambda c: SSTWordLevel.synonym_dict[c]),
                          keep_same)
-    swap = Transformation(keep_same,
-                         SWAP(lambda c: True, lambda c: True),
-                         keep_same)
     delete = Transformation(keep_same,
                          DEL(lambda c: c in ["a", "the", "and", "to", "of"]),
                          keep_same)
     ins = Transformation(keep_same,
-                         INS(lambda c: c in ["a", "the", "and", "to", "of"]),
+                         DUP(lambda c: True),
                          keep_same)
-    # transform = Composition(sub, swap, ins, delete)
-    transform = Composition(swap, sub)
+    if args.adv_train > 0:
+        transform = eval(args.transform)
 
 # generate adv attack examples
 def adv_batch(batch_X, batch_Y):
@@ -427,14 +427,16 @@ def adv_batch(batch_X, batch_Y):
     adv_batch_X = []
     arg_list = []
     for x, y in zip(batch_X, batch_Y):
-        arg_list.append((chars.to_string(x), y, args.adv_train))
+        arg_list.append((Alphabet.to_string(x, remove_padding=True), y, args.adv_train))
 #                 rets = Multiprocessing.mapping(transform.beam_search_adversarial, arg_list, 16, Alphabet.partial_to_loss)
 #                 for i, ret in enumerate(rets):
     for i, arg in enumerate(arg_list):
         ret = transform.beam_search_adversarial(*arg)
         adv_batch_X.append(batch_X[i].unsqueeze(0))
         for j in range(len(ret)):
-            adv_batch_X.append(torch.Tensor(chars.to_ids(ret[j][0])).cuda().unsqueeze(0).long())
+            adv_batch_X.append(torch.Tensor(Alphabet.to_ids(ret[j][0])).cuda().unsqueeze(0).long())
+        for j in range(args.adv_train - len(ret)):
+            adv_batch_X.append(batch_X[i].unsqueeze(0))
             
     Info.adv = False
     return torch.cat(adv_batch_X, 0)
@@ -503,13 +505,14 @@ def train(epoch, models, decay=True):
             adv_time = sys_time.time()
             if args.adv_train > 0:
                 Alphabet.partial_to_loss = partial(partial_to_loss, model)
-                flag = False
-                for p in model.parameters():
-                    if list(p.shape) == [56, 64]:
-                        Alphabet.embedding = p.data.cpu().numpy()
-                        flag = True
-                        break
-                assert flag
+                if args.dataset == "AG":
+                    flag = False
+                    for p in model.parameters():
+                        if list(p.shape) == [56, 64]:
+                            Alphabet.embedding = p.data.cpu().numpy()
+                            flag = True
+                            break
+                    assert flag
                 data = adv_batch(data, target)
                 target = target.unsqueeze(-1).repeat((1, args.adv_train + 1)).view(-1)
                 

@@ -122,7 +122,7 @@ def DelDupSubWord(a, b, c, x, is_numpy=False, batch_size=64, del_set={"a", "and"
     while end_pos > 0 and int(x[end_pos - 1]) == padding_id:
         end_pos -= 1
         
-    valid_sub_poss = [i for i in range(end_pos) if Glove.id2str[int(x[i])] in SSTWordLevel.synonym_dict]
+    valid_sub_poss = [i for i in range(end_pos) if int(x[i]) in SSTWordLevel.synonym_dict_id]
     for sub in range(c, -1, -1):
         for sub_poss in itertools.combinations(tuple(valid_sub_poss), sub):
             if is_numpy:
@@ -130,7 +130,7 @@ def DelDupSubWord(a, b, c, x, is_numpy=False, batch_size=64, del_set={"a", "and"
             else:
                 x3 = x.clone()
             for sub_pos in sub_poss:
-                x3[sub_pos] = Glove.str2id[SSTWordLevel.synonym_dict[Glove.id2str[int(x[sub_pos])]][0]]
+                x3[sub_pos] = SSTWordLevel.synonym_dict_id[int(x[sub_pos])][0]
             valid_dup_poss = [i for i in range(end_pos) if i not in sub_poss]
             for dup in range(b, -1, -1):
                 for dup_poss in itertools.combinations(tuple(valid_dup_poss), dup):

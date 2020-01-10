@@ -166,8 +166,74 @@ class Embedding(InferModule):
         return [1, in_shape[0], self.dim]
 
     def forward(self, x, **kargs):
-        y = self.embed(x.long()).view(-1, 1, self.in_shape[0], self.dim)
-        return y
+        if isinstance(x, ai.LabeledDomain):
+            return LabeledDomain(x, **kargs)
+        elif isinstance(x, ai.TaggedDomain):
+            return ai.TaggedDomain(self.forward(x.a, **kargs), x.tag)
+        elif isinstance(x, ai.ListDomain):
+            for (i, a) in enumerate(x.al):
+                x.al[i] = self.forward(a, **kargs)
+            return x
+        elif not x.isPoint():  # convert to Box (HybirdZonotope), if the input is Box
+            sample_num = 100
+            swaps = []
+            if "sample_num" in kargs:
+                sample_num = kargs["sample_num"]
+            if "swaps" in kargs:
+                swaps = kargs["swaps"]
+            
+            x = x.center().vanillaTensorPart().long()
+            groups = [[] for _ in range(len(x))]
+            for i, data in enumerate(x):
+                all_set = 0
+                subs = [[] for _ in range(len(data))]
+                for (j, s) in enumerate(data):
+                    if j not in swaps:
+                        s = int(s)
+                        if s not in SSTWordLevel.synonym_dict_id:
+                            continue
+                        subs[j] = SSTWordLevel.synonym_dict_id[s]
+                        all_set += len(subs[j])
+
+                while all_set > 0:
+                    pre = -self.in_shape[0]
+                    groups[i].append([])
+                    for j in range(len(subs)):
+                        if len(subs[j]) > 0:
+                            if j - pre >= 10:  # 10 here is the kernal size + pooling size!
+                                pre = j
+                                groups[i][-1].append((j, subs[j][0]))
+                                subs[j] = subs[j][1:]
+                                all_set -= 1
+                if sample_num < 100:
+                    random.shuffle(groups[i])
+
+            groups_consider = 0
+            for t in groups:
+                groups_consider = min(max(groups_consider, len(t)), sample_num)    
+            x = x.repeat((1, groups_consider + 1))
+            for i in range(len(x)):
+                for j in range(1, min(groups_consider, len(groups[i])) + 1):
+                    for p, q in groups[i][j - 1]:
+                        x[i][j * self.in_shape[0] + p] = q
+            y = self.embed(x.long()).view(-1, 1, self.in_shape[0], self.dim)
+            for id in range(len(y)):
+                item_group_id = id % (groups_consider + 1)
+                item_id = id - item_group_id
+                if item_group_id == 0: continue
+                y[id] = y[id] * EmbeddingWithSub.delta + (1 - EmbeddingWithSub.delta) * y[item_id]
+
+            return ai.TaggedDomain(y, tag="magic" + str(groups_consider + 1))
+        elif isinstance(x, torch.Tensor):  # it is a Point
+            y = self.embed(x.long()).view(-1, 1, self.in_shape[0], self.dim)
+            if S.Info.adv:
+                y.requires_grad = True
+                S.Info.out_y = y
+                return S.Info.out_y
+            else:
+                return y
+        else:
+            raise NotImplementedError()
 
     def neuronCount(self):
         return 0
