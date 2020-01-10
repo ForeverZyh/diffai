@@ -664,9 +664,10 @@ def test(models, epoch, f=None):
                         all_correct = True
                         for batch_d in iterator_oracle:
                             batch_size = len(batch_d)
-                            batch_t = t.repeat(batch_size).unsqueeze(-1)
-                            pred = m.model(batch_d).vanillaTensorPart().max(1, keepdim=True)[1]  # get the index of the max log-probability
-                            batch_correct = pred.eq(batch_t.data.view_as(pred)).sum()
+                            batch_t = t.repeat(batch_size)
+                            box = m.domains[0].domain.box(batch_d, w=m.model.w, model=m.model, untargeted=True, target=batch_t).to_dtype() # only test the first domain
+                            bs = m.model(box)
+                            batch_correct = bs.isSafe(batch_t).sum().item()
                             if batch_correct != batch_size:
                                 all_correct = False
                                 break
