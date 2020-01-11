@@ -1077,6 +1077,10 @@ def Conv(*args, **kargs):
     return Seq(Conv2D(*args, **kargs), activation(**kargs))
 
 
+def Conv4Embed(*args, **kargs):
+    return Seq(Conv2D4Embed(*args, **kargs), activation(**kargs))
+
+
 def ConvTranspose(*args, **kargs):
     return Seq(ConvTranspose2D(*args, **kargs), activation(**kargs))
 
