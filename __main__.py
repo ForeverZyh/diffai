@@ -399,7 +399,10 @@ if args.dataset == "AG":
     Alphabet.set_alphabet(dict_map, np.zeros((56, 64)))
     keep_same = REGEX(r".*")
     swap = Transformation(keep_same, SWAP(lambda c: True, lambda c: True), keep_same)
-    if args.adv_train > 0:
+    sub = Transformation(keep_same,
+                         SUB(lambda c: c in Alphabet.adjacent_keys, lambda c: Alphabet.adjacent_keys[c]),
+                         keep_same)
+    if args.adv_train > 0 or args.adv_test:
         transform = eval(args.transform)
 
 elif args.dataset == "SST2":
@@ -418,7 +421,7 @@ elif args.dataset == "SST2":
     ins = Transformation(keep_same,
                          DUP(lambda c: True),
                          keep_same)
-    if args.adv_train > 0:
+    if args.adv_train > 0 or args.adv_test:
         transform = eval(args.transform)
 
 # generate adv attack examples
@@ -606,10 +609,10 @@ def test(models, epoch, f=None):
         adv_batch_X = []
         arg_list = []
         for x, y in zip(batch_X, batch_Y):
-            arg_list.append((chars.to_string(x), y, 1))
+            arg_list.append((Alphabet.to_string(x, True), y, 1))
         for i, arg in enumerate(arg_list):
             ret = transform.beam_search_adversarial(*arg)
-            adv_batch_X.append(torch.Tensor(chars.to_ids(ret[0][0])).cuda().unsqueeze(0).long())
+            adv_batch_X.append(torch.Tensor(Alphabet.to_ids(ret[0][0])).cuda().unsqueeze(0).long())
 
         Info.adv = False
         return torch.cat(adv_batch_X, 0)
