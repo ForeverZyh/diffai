@@ -381,16 +381,8 @@ total_batches_seen = 0
 decay_step = 4000
 resume_ratio = 0
 
-if args.decay_fir:
-    decay_delta = args.train_delta / (args.epochs * 0.8 * len(train_loader) * args.batch_size / decay_step)
-    decay_ratio = args.train_ratio / (args.epochs * 0.8 * len(train_loader) * args.batch_size / decay_step)
-    EmbeddingWithSub.delta = decay_delta * (args.resume_epoch * len(train_loader) * args.batch_size / decay_step)
-    resume_ratio = decay_ratio * (args.resume_epoch * len(train_loader) * args.batch_size / decay_step)
-else:
-    decay_delta = 0
-    decay_ratio = 0
-
 transform = None
+pre_set_ratio = 0
 if args.dataset == "AG":
     Alphabet.set_char_model()
     Alphabet.max_len = 300
@@ -402,8 +394,15 @@ if args.dataset == "AG":
     sub = Transformation(keep_same,
                          SUB(lambda c: c in Alphabet.adjacent_keys, lambda c: Alphabet.adjacent_keys[c]),
                          keep_same)
+    delete = Transformation(keep_same,
+                        DEL(lambda c: True),
+                        keep_same)
+    ins = Transformation(keep_same,
+                        DUP(lambda c: c in Alphabet.adjacent_keys, lambda c: Alphabet.adjacent_keys[c]),
+                        keep_same)
     if args.adv_train > 0 or args.adv_test:
         transform = eval(args.transform)
+    pre_set_ratio = 0.8
 
 elif args.dataset == "SST2":
     Alphabet.set_word_model()
@@ -419,11 +418,27 @@ elif args.dataset == "SST2":
                          DEL(lambda c: c in ["a", "the", "and", "to", "of"]),
                          keep_same)
     ins = Transformation(keep_same,
-                         DUP(lambda c: True),
+                         DUP(lambda c: True, lambda c: [c]),
                          keep_same)
     if args.adv_train > 0 or args.adv_test:
         transform = eval(args.transform)
+    pre_set_ratio = 0.4
 
+        
+if args.decay_fir:
+    decay_delta = args.train_delta / (args.epochs * pre_set_ratio * len(train_loader) * args.batch_size / decay_step)
+    decay_ratio = args.train_ratio / (args.epochs * pre_set_ratio * len(train_loader) * args.batch_size / decay_step)
+    if args.dataset == "SST2":
+        EmbeddingWithSub.delta = args.train_delta
+    else:
+        EmbeddingWithSub.delta = decay_delta * (args.resume_epoch * len(train_loader) * args.batch_size / decay_step)
+    resume_ratio = decay_ratio * (args.resume_epoch * len(train_loader) * args.batch_size / decay_step)
+else:
+    decay_delta = 0
+    decay_ratio = 0
+    EmbeddingWithSub.delta = args.train_delta
+
+    
 # generate adv attack examples
 def adv_batch(batch_X, batch_Y):
     Info.adv = True
@@ -801,7 +816,7 @@ def createModel(net, domain, domain_name):
     if args.sgd:
         model.optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9, weight_decay=5e-4)
     else:
-        model.optimizer = optim.Adam(model.parameters(), lr=args.lr)
+        model.optimizer = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr)
 
     if args.lr_multistep:
         model.lrschedule = optim.lr_scheduler.MultiStepLR(

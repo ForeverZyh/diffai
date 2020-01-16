@@ -21,11 +21,13 @@ except:
 
 import math
 import abc
+from nltk import pos_tag
 
 from torch.nn.modules.conv import _ConvNd
 from enum import Enum
 from utils import swap_pytorch
 from dataset.dataset_loader import SSTWordLevel, Glove
+from DSL.Alphabet import Alphabet
 
 
 class InferModule(nn.Module):
@@ -95,7 +97,8 @@ class InferModule(nn.Module):
         reg = 0
         if torch.__version__[0] == "0":
             for param in self.parameters():
-                reg += param.norm(p)
+                if param.requires_grad: 
+                    reg += param.norm(p)
         else:
             if hasattr(self, "weight_g"):
                 reg += self.weight_g.norm().sum()
@@ -185,14 +188,18 @@ class Embedding(InferModule):
             x = x.center().vanillaTensorPart().long()
             groups = [[] for _ in range(len(x))]
             for i, data in enumerate(x):
+                input_str = Alphabet.to_string(data, True)
+                input_pos_tag = pos_tag(input_str)
+                
                 all_set = 0
                 subs = [[] for _ in range(len(data))]
                 for (j, s) in enumerate(data):
                     if j not in swaps:
                         s = int(s)
-                        if s not in SSTWordLevel.synonym_dict_id:
-                            continue
-                        subs[j] = SSTWordLevel.synonym_dict_id[s]
+                        if s in SSTWordLevel.synonym_dict_id:
+                            for k in range(len(SSTWordLevel.synonym_dict_id[s])):
+                                if SSTWordLevel.synonym_dict_pos_tag[s][k] == input_pos_tag[j][1]:
+                                    subs[j].append(SSTWordLevel.synonym_dict_id[s][k])
                         all_set += len(subs[j])
 
                 while all_set > 0:
