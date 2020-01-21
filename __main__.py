@@ -41,7 +41,7 @@ from scheduling import *
 from exhaustive import *
 
 from utils import Dict, Multiprocessing, MultiprocessingWithoutPipe
-from DSL.transformations import REGEX, Transformation, INS, tUnion, SUB, DEL, Composition, Union, SWAP, DUP
+from DSL.transformations import REGEX, Transformation, INS, tUnion, SUB, DEL, Composition, Union, SWAP, DUP, TransformationIns, TransformationDel
 from DSL.Alphabet import Alphabet
 from dataset.dataset_loader import SSTWordLevel, Glove
 
@@ -332,6 +332,7 @@ parser.add_argument('--test-func', type=str, default=None, help='exhaustive test
 parser.add_argument('--train-delta', type=int, default=None, help='train the number of delta in each sentence')
 parser.add_argument('--train-ratio', type=float, default=0.75, help='train ratio of the abstract loss')
 parser.add_argument('--adv-train', type=int, default=0, help='adv training combined abstract training')
+parser.add_argument('--e-train', type=int, default=0, help='exhaustive training combined abstract training')
 parser.add_argument('--adv-test', type=bool, default=False, help='adv testing')
 parser.add_argument('--resume-epoch', type=int, default=0, help='the epoch from resuming')
 parser.add_argument('--transform', type=str, default=None, help='transformation when doing adversarial')
@@ -533,6 +534,26 @@ def train(epoch, models, decay=True):
                     assert flag
                 data = adv_batch(data, target)
                 target = target.unsqueeze(-1).repeat((1, args.adv_train + 1)).view(-1)
+            elif args.e_train > 0:
+                with torch.no_grad():
+                    e_batch = []
+                    for d, t in zip(data, target):
+                        iterator_oracle = eval(args.test_func)
+                        worst = [(None, -1e10) for _ in range(args.e_train)]
+                        for batch_d in iterator_oracle:
+                            batch_size = len(batch_d)
+                            batch_t = t.repeat(batch_size)
+                            loss = model(batch_d).loss(target=batch_t, **vargs)
+                            for i in range(len(loss)):
+                                for j in range(len(worst)):
+                                    if worst[j][1] < loss[i]:
+                                        worst[j] = (batch_d[i], loss[i])
+                                        break
+                        e_batch.append(d.unsqueeze(0))
+                        for w, _ in worst:
+                            e_batch.append(w.unsqueeze(0))
+                data = torch.cat(e_batch, 0)
+                target = target.unsqueeze(-1).repeat((1, args.e_train + 1)).view(-1)
                 
             adv_time = sys_time.time() - adv_time
             
@@ -574,7 +595,7 @@ def train(epoch, models, decay=True):
                         if p is not None and torch.isnan(p).any():
                             raise Exception("Such nan in vals after clip")
 
-            model.addSpeed(timer.getUnitTime() + adv_time / len(data) * (args.adv_train + 1))
+            model.addSpeed(timer.getUnitTime() + adv_time / len(data) * (args.adv_train + 1 + args.e_train))
 
             if batch_idx % args.log_interval == 0:
                 print(('Train Epoch {:12} {:' + str(

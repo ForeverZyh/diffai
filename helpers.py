@@ -256,7 +256,7 @@ def loadDataset(dataset, batch_size, train, transform=True, val=False):
     return torch.utils.data.DataLoader(
         train_set
         , batch_size=batch_size
-        , shuffle=True,
+        , shuffle=True and train,
         **({'num_workers': 1, 'pin_memory': True} if use_cuda else {}))
 
 
