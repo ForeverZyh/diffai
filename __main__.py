@@ -413,7 +413,7 @@ elif args.dataset == "SST2":
     Alphabet.set_alphabet(dict_map, Glove.embedding)
     keep_same = REGEX(r".*")
     sub = Transformation(keep_same,
-                         SUB(lambda c: c in SSTWordLevel.synonym_dict, lambda c: SSTWordLevel.synonym_dict[c]),
+                         SUB(lambda c: c in SSTWordLevel.synonym_dict, lambda c: SSTWordLevel.synonym_dict[c], lambda c: SSTWordLevel.synonym_dict_pos_tag[Glove.str2id[c]]),
                          keep_same)
     delete = Transformation(keep_same,
                          DEL(lambda c: c in ["a", "the", "and", "to", "of"]),
@@ -539,7 +539,7 @@ def train(epoch, models, decay=True):
                     e_batch = []
                     for d, t in zip(data, target):
                         iterator_oracle = eval(args.test_func)
-                        worst = [(None, -1e10) for _ in range(args.e_train)]
+                        worst = [(d, -1e10) for _ in range(args.e_train)]
                         for batch_d in iterator_oracle:
                             batch_size = len(batch_d)
                             batch_t = t.repeat(batch_size)
@@ -689,13 +689,14 @@ def test(models, epoch, f=None):
         for m in model_stats:
             if args.adv_test:
                 Alphabet.partial_to_loss = partial(partial_to_loss, m.model)
-                flag = False
-                for p in m.model.parameters():
-                    if list(p.shape) == [56, 64]:
-                        Alphabet.embedding = p.data.cpu().numpy()
-                        flag = True
-                        break
-                assert flag
+                if args.dataset == 'AG':
+                    flag = False
+                    for p in m.model.parameters():
+                        if list(p.shape) == [56, 64]:
+                            Alphabet.embedding = p.data.cpu().numpy()
+                            flag = True
+                            break
+                    assert flag
                 data = adv_batch(data.long(), target)
 
             with torch.no_grad():
