@@ -395,12 +395,8 @@ if args.dataset == "AG":
     sub = Transformation(keep_same,
                          SUB(lambda c: c in Alphabet.adjacent_keys, lambda c: Alphabet.adjacent_keys[c]),
                          keep_same)
-    delete = Transformation(keep_same,
-                        DEL(lambda c: True),
-                        keep_same)
-    ins = Transformation(keep_same,
-                        DUP(lambda c: c in Alphabet.adjacent_keys, lambda c: Alphabet.adjacent_keys[c]),
-                        keep_same)
+    delete = TransformationDel()
+    ins = TransformationIns()
     if args.adv_train > 0 or args.adv_test:
         transform = eval(args.transform)
     pre_set_ratio = 0.8
@@ -756,7 +752,7 @@ def test(models, epoch, f=None):
             m.model.lrschedule.step(1 - pr_corr)
 
         h.printBoth(('Test: {:12} trained with {:' + str(
-            largest_domain) + '} - Avg sec/ex {:1.12f}, Accuracy: {}/{} ({:3.1f}%)').format(
+            largest_domain) + '} - Avg sec/ex {:1.12f}, Accuracy: {}/{} ({:4.2f}%)').format(
             m.model.name, m.model.ty.name,
             m.model.speed,
             m.correct, l, 100. * pr_corr), f=f)
