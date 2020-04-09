@@ -388,29 +388,13 @@ class EmbeddingWithSub(InferModule):
                 d = int(x.label[:-len("Convex_Dataaug")])
                 ys = torch.cat(get_swaped(d), 1)
                 return ai.TaggedDomain(ys.view(-1, 1, self.in_shape[0], self.dim), tag="magic" + str(d))
-            elif x.label[-len("Convex_Box_Groups"):] == "Convex_Box_Groups":
-                try:
-                    groups_consider = int(x.label[:-len("Convex_Box_Groups")])
-                except:
-                    groups_consider = None
-                if groups_consider is None:
-                    groups_consider = len(self.groups)
-                else:
-                    random.shuffle(self.groups)
-                x = xc.repeat((1, groups_consider + 1))
-                for i in x:
-                    for j in range(1, groups_consider + 1):
-                        for p, q in self.groups[j - 1]:
-                            i[j * self.in_shape[0] + p] = i[q]
-
-                y = self.embed(x.long()).view(-1, 1, self.in_shape[0], self.dim)
-                for id in range(len(y)):
-                    item_group_id = id % (groups_consider + 1)
-                    item_id = id - item_group_id
-                    if item_group_id == 0: continue
-                    y[id] = y[id] * EmbeddingWithSub.delta + (1 - EmbeddingWithSub.delta) * y[item_id]
-
-                return ai.TaggedDomain(y, tag="magic" + str(groups_consider + 1))
+            elif x.label[-len("swappos"):] == "swappos":
+                swap_num = int(x.label[:-len("swappos")])
+                return ai.TaggedDomain(y, tag="anothermagic" + str(swap_num + 1))
+            elif x.label[-len("swappoint"):] == "swappoint":
+                swap_num = int(x.label[:-len("swappoint")])
+                y = self.embed(xc.long()).view(-1, swap_num + 1, self.in_shape[0], self.dim)
+                return y[:,:1,:,:]
             elif x.label[-len("Swap_First"):] == "Swap_First":
                 d = int(x.label[:-len("Swap_First")])
                 xs = get_swaped_x(d)
@@ -1227,6 +1211,22 @@ class ReduceToZono(InferModule):
                 return ai.HybridZonotope((lower + upper) / 2, (upper - lower) / 2, None)
             else:  # if it is a Point()
                 assert False
+                
+        def get_reduced_zonotope(x, swap_num):
+            num_e = h.product(x.size())
+            view_num = swap_num * h.product(self.in_shape)
+            x = x.view(-1, swap_num, *self.in_shape)
+            if num_e >= view_num and num_e % view_num == 0:  # convert to Box (HybirdZonotope)
+                xs = []
+                xc = x[:,0,:,:,:]
+                for i in range(1, swap_num):
+                    xs.append(x[:,i,:,:,:] - x[:,0,:,:,:])
+                    xc += xs[-1] / 2
+                xs = torch.stack(xs, 0) / 2
+                    
+                return ai.HybridZonotope(xc, None, xs)
+            else:  # if it is a Point()
+                assert False
 
         if isinstance(x, ai.ListDomain):
             for (i, a) in enumerate(x.al):
@@ -1234,6 +1234,8 @@ class ReduceToZono(InferModule):
             return x
         elif isinstance(x, ai.TaggedDomain) and isinstance(x.tag, str) and x.tag[:5] == "magic":
             return get_reduced(x.a, int(x.tag[5:]))
+        elif isinstance(x, ai.TaggedDomain) and isinstance(x.tag, str) and x.tag[:12] == "anothermagic":
+            return get_reduced_zonotope(x.a, int(x.tag[12:]))
         elif isinstance(x, ai.TaggedDomain):
             return ai.TaggedDomain(self.forward(x.a), x.tag)
         elif isinstance(x, torch.Tensor):

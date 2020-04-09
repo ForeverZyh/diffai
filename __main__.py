@@ -606,6 +606,7 @@ def train(epoch, models, decay=True):
     val = 0
     val_origin = 0
     batch_cnt = 0
+    return val, val_origin
     for batch_idx, (data, target) in enumerate(val_loader):
         batch_cnt += 1
         if h.use_cuda:
