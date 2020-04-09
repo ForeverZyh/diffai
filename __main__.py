@@ -541,15 +541,16 @@ def train(epoch, models, decay=True):
                             batch_t = t.repeat(batch_size)
                             loss = model(batch_d).loss(target=batch_t, **vargs)
                             for i in range(len(loss)):
+                                bubble = (batch_d[i], loss[i])
                                 for j in range(len(worst)):
-                                    if worst[j][1] < loss[i]:
-                                        worst[j] = (batch_d[i], loss[i])
-                                        break
+                                    if worst[j][1] < bubble[1]:
+                                        worst[j], bubble = bubble, worst[j]
+                                        
                         e_batch.append(d.unsqueeze(0))
                         for w, _ in worst:
                             e_batch.append(w.unsqueeze(0))
                 data = torch.cat(e_batch, 0)
-                target = target.unsqueeze(-1).repeat((1, args.e_train + 1)).view(-1)
+#                 target = target.unsqueeze(-1).repeat((1, args.e_train + 1)).view(-1)
                 
             adv_time = sys_time.time() - adv_time
             
