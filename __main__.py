@@ -951,9 +951,7 @@ else:
     models = h.flat(
         [[createModel(net, h.parseValues(d, goals, scheduling), h.catStrs(d)) for net in nets] for d in args.domain])
 
-patience = 30
-last_best_origin = 0
-best_origin = 1e10
+patience = 5
 last_best = 0
 best = 1e10
 decay = True
@@ -973,18 +971,13 @@ with h.mopen(args.dont_write, os.path.join(out_dir, "log.txt"), "w") as f:
             break
         with Timer("train all models in epoch", 1, f=f):
             val_origin, val = train(epoch, models, decay)
-            h.printBoth("Original val loss: %.2f\t Val loss: %.2f\n" % (val_origin, val), f=f)
-            if decay:
-                if val_origin < best_origin:
-                    best_origin = val_origin
-                    last_best_origin = epoch
-                elif epoch - last_best_origin > patience:
-                    h.printBoth("Early stopping decay at epoch %d\n" % epoch, f=f)
-                    decay = False
-            if not decay:
+            h.printBoth("Original val loss: %.4f\t Val loss: %.4f\n" % (val_origin, val), f=f)
+            if pre_set_ratio * args.epochs >= epoch:
                 if val < best:
                     best = val
                     last_best = epoch
                 elif epoch - last_best > patience:
                     h.printBoth("Early stopping at epoch %d\n" % epoch, f=f)
                     break
+                    
+    h.printBoth("Best at epoch %d\n" % last_best, f=f)
