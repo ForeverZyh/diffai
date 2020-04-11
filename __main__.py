@@ -550,7 +550,7 @@ def train(epoch, models, decay=True):
                         for w, _ in worst:
                             e_batch.append(w.unsqueeze(0))
                 data = torch.cat(e_batch, 0)
-#                 target = target.unsqueeze(-1).repeat((1, args.e_train + 1)).view(-1)
+                target = target.unsqueeze(-1).repeat((1, args.e_train + 1)).view(-1)
                 
             adv_time = sys_time.time() - adv_time
             
