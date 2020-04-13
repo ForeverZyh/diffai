@@ -232,12 +232,13 @@ def loadDataset(dataset, batch_size, train, transform=True, val=False):
     elif dataset in ["AG"]:
         X = np.load("./dataset/%s/X_%s.npy" % (dataset, 'train' if train else 'test'))
         y = np.load("./dataset/%s/y_%s.npy" % (dataset, 'train' if train else 'test'))
+        held_out = 4000
         if val:
-            X = X[:1000]
-            y = y[:1000]
+            X = X[:held_out]
+            y = y[:held_out]
         elif train:
-            X = X[1000:]
-            y = y[1000:]
+            X = X[held_out:]
+            y = y[held_out:]
 
         x = torch.from_numpy(X)
         train_set = torch.utils.data.TensorDataset(x, torch.from_numpy(y))
