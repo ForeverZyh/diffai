@@ -606,25 +606,26 @@ def train(epoch, models, decay=True):
     val = 0
     val_origin = 0
     batch_cnt = 0
-    for batch_idx, (data, target) in enumerate(val_loader):
-        batch_cnt += 1
-        if h.use_cuda:
-            data, target = data.cuda(), target.cuda()
+    with torch.no_grad():
+        for batch_idx, (data, target) in enumerate(val_loader):
+            batch_cnt += 1
+            if h.use_cuda:
+                data, target = data.cuda(), target.cuda()
 
-        for model_id in range(len(models)):
-            if gpu_num > 1:
-                model = parallel_models[model_id].module
-                parallel_model = parallel_models[model_id]
-            else:
-                model = models[model_id]
-                parallel_model = model
+            for model_id in range(len(models)):
+                if gpu_num > 1:
+                    model = parallel_models[model_id].module.eval()
+                    parallel_model = parallel_models[model_id].eval()
+                else:
+                    model = models[model_id].eval()
+                    parallel_model = model.eval()
                 
-            for s in model.getSpec(data.to_dtype(), target):
-                loss = model.aiLoss(*s, **vargs, parallel=parallel_model).mean(dim=0)
-                val += loss.detach().item()
+                for s in model.getSpec(data.to_dtype(), target):
+                    loss = model.aiLoss(*s, **vargs, parallel=parallel_model).mean(dim=0)
+                    val += loss
 
-            loss = model.aiLoss(data, target, **vargs, parallel=parallel_model).mean(dim=0)
-            val_origin += loss.detach().item()
+                loss = model.aiLoss(data, target, **vargs, parallel=parallel_model).mean(dim=0)
+                val_origin += loss
 
     return val_origin / batch_cnt, val / batch_cnt
 
