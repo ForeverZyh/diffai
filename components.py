@@ -1080,6 +1080,17 @@ def FFNN(layers, last_lin=False, last_zono=False, **kargs):
     return Seq(*([Seq(PrintActivation(**kargs), Linear(s, **kargs), activation(**kargs)) for s in starts] + ends))
 
 
+def FFNNDropout(layers, last_lin=False, last_zono=False, **kargs):
+    starts = layers
+    ends = []
+    if last_lin:
+        ends = ([CorrelateAll(only_train=False)] if last_zono else []) + [PrintActivation(activation="Affine"), Dropout(p=0.3),
+                                                                          Linear(layers[-1], **kargs)]
+        starts = layers[:-1]
+
+    return Seq(*([Seq(PrintActivation(**kargs), Dropout(p=0.3), Linear(s, **kargs), activation(**kargs)) for s in starts] + ends))
+
+
 def Conv(*args, **kargs):
     return Seq(Conv2D(*args, **kargs), activation(**kargs))
 
