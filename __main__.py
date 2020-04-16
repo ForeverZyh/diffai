@@ -534,6 +534,7 @@ def train(epoch, models, decay=True):
                 data = adv_batch(data, target)
                 target = target.unsqueeze(-1).repeat((1, args.adv_train + 1)).view(-1)
             elif args.e_train > 0:
+                model.eval()
                 with torch.no_grad():
                     e_batch = []
                     for d, t in zip(data, target):
@@ -552,6 +553,7 @@ def train(epoch, models, decay=True):
                         e_batch.append(d.unsqueeze(0))
                         for w, _ in worst:
                             e_batch.append(w.unsqueeze(0))
+                model.train()
                 data = torch.cat(e_batch, 0)
                 target = target.unsqueeze(-1).repeat((1, args.e_train + 1)).view(-1)
                 
