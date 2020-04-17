@@ -461,6 +461,7 @@ def adv_batch(batch_X, batch_Y):
 def partial_to_loss(model, x, y):
     model.eval()
     assert not model.training
+    model.optimizer.zero_grad()
     loss = model.aiLoss(torch.Tensor(x).cuda().view(1, -1), y.cuda().view(1), **vargs).mean(dim=0)
     loss.backward()
     model.train()
