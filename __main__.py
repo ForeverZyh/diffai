@@ -332,6 +332,7 @@ parser.add_argument('--test-func', type=str, default=None, help='exhaustive test
 parser.add_argument('--train-delta', type=int, default=None, help='train the number of delta in each sentence')
 parser.add_argument('--train-ratio', type=float, default=0.75, help='train ratio of the abstract loss')
 parser.add_argument('--adv-train', type=int, default=0, help='adv training combined abstract training')
+parser.add_argument('--epoch-ratio', type=float, default=0.8, help='when does the ratio stop increasing')
 parser.add_argument('--e-train', type=int, default=0, help='exhaustive training combined abstract training')
 parser.add_argument('--adv-test', type=bool, default=False, help='adv testing')
 parser.add_argument('--resume-epoch', type=int, default=0, help='the epoch from resuming')
@@ -399,7 +400,7 @@ if args.dataset == "AG":
     ins = TransformationIns()
     if args.adv_train > 0 or args.adv_test:
         transform = eval(args.transform)
-    pre_set_ratio = 0.8
+    pre_set_ratio = args.epoch_ratio
 
 elif args.dataset == "SST2":
     Alphabet.set_word_model()
