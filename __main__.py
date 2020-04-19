@@ -980,12 +980,18 @@ with h.mopen(args.dont_write, os.path.join(out_dir, "log.txt"), "w") as f:
         with Timer("train all models in epoch", 1, f=f):
             val_origin, val = train(epoch, models, decay)
             h.printBoth("Original val loss: %.4f\t Val loss: %.4f\n" % (val_origin, val), f=f)
-            if pre_set_ratio * args.epochs >= epoch:
+            if pre_set_ratio * args.epochs <= epoch:
                 if val < best:
                     best = val
                     last_best = epoch
                 elif epoch - last_best > patience:
                     h.printBoth("Early stopping at epoch %d\n" % epoch, f=f)
                     break
+        if epoch % args.test_freq == 0 and epoch == args.epochs and not args.test_first:
+            with Timer("test all models after epoch " + str(epoch), 1):
+                test(models, epoch, f)
+                if f is not None:
+                    f.flush()
+
                     
     h.printBoth("Best at epoch %d\n" % last_best, f=f)
