@@ -123,3 +123,4 @@ class Complement(Const): # use with mix when aw = 1, and 0 <= c < 1
 class Info:
     out_y = None
     adv = False
+    adjacent_keys = None

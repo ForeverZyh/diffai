@@ -6,20 +6,11 @@ from utils import swap_pytorch
 from dataset.dataset_loader import SSTWordLevel, Glove
 from nltk import pos_tag
 from DSL.Alphabet import Alphabet
+import diffai.scheduling as S
 
 
-dict_map = dict(np.load("./dataset/AG/dict_map.npy").item())
-lines = open("./dataset/en.key").readlines()
-adjacent_keys = [[] for i in range(len(dict_map))]
-for line in lines:
-    tmp = line.strip().split()
-    ret = set(tmp[1:]).intersection(dict_map.keys())
-    ids = []
-    for x in ret:
-        ids.append(dict_map[x])
-    adjacent_keys[dict_map[tmp[0]]].extend(ids)
-    
 def SwapSub(a, b, x, is_numpy=False, batch_size=64):
+    adjacent_keys = S.Info.adjacent_keys
     if not is_numpy:
         x = x.cpu()
         X = []

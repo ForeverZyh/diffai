@@ -159,9 +159,10 @@ def getShapeConvTranspose(in_shape, conv_shape, stride=1, padding=0, out_padding
 
 
 class Embedding(InferModule):
-    def init(self, in_shape, **kargs):
+    def init(self, in_shape, span, **kargs):
         self.vocab, self.dim = Glove.embedding.shape
         self.in_shape = in_shape
+        self.span = span
         self.embed = nn.Embedding(self.vocab, self.dim)
         self.embed.weight.data.copy_(torch.from_numpy(Glove.embedding))
         self.embed.weight.requires_grad = False
@@ -207,7 +208,7 @@ class Embedding(InferModule):
                     groups[i].append([])
                     for j in range(len(subs)):
                         if len(subs[j]) > 0:
-                            if j - pre >= 10:  # 10 here is the kernal size + pooling size!
+                            if j - pre >= self.span:  # span here is the kernal size + pooling size!
                                 pre = j
                                 groups[i][-1].append((j, subs[j][0]))
                                 subs[j] = subs[j][1:]
@@ -256,22 +257,12 @@ class Embedding(InferModule):
 
 class EmbeddingWithSub(InferModule):
     delta = 0
-    def init(self, in_shape, vocab, dim, **kargs):
+    def init(self, in_shape, vocab, dim, span, **kargs):
         self.vocab = vocab
         self.dim = dim
         self.in_shape = in_shape
+        self.span = span
         self.embed = nn.Embedding(vocab, dim)
-        dict_map = dict(np.load("./dataset/AG/dict_map.npy").item())
-        lines = open("./dataset/en.key").readlines()
-        self.adjacent_keys = [[] for i in range(len(dict_map))]
-        for line in lines:
-            tmp = line.strip().split()
-            ret = set(tmp[1:]).intersection(dict_map.keys())
-            ids = []
-            for x in ret:
-                ids.append(dict_map[x])
-            self.adjacent_keys[dict_map[tmp[0]]].extend(ids)
-
         subs = [None] * self.in_shape[0]
         self.swaps = []
         all_set = self.in_shape[0] * 2 - 2
@@ -290,7 +281,7 @@ class EmbeddingWithSub(InferModule):
             self.groups.append([])
             for i in range(len(subs)):
                 if len(subs[i]) > 0:
-                    if i - pre >= 20:  # 20 here is the kernal size + pooling size!
+                    if i - pre >= self.span:  # span here is the kernal size + pooling size!
                         pre = i
                         self.groups[-1].append((i, subs[i][0]))
                         subs[i] = subs[i][1:]
@@ -434,7 +425,7 @@ class EmbeddingWithSub(InferModule):
                         pre = -self.in_shape[0]
                         groups[i].append([])
                         for j in range(len(subs)):
-                            if j - pre >= 20:  # 20 here is the kernal size + pooling size!
+                            if j - pre >= self.span:  # span here is the kernal size + pooling size!
                                 if len(subs[j]) > 0:
                                     pre = j
                                     groups[i][-1].append((j, subs[j][0]))
@@ -498,7 +489,7 @@ class EmbeddingWithSub(InferModule):
                     groups[i].append([])
                     for j in range(len(subs)):
                         if len(subs[j]) > 0:
-                            if j - pre >= 20:  # 20 here is the kernal size + pooling size!
+                            if j - pre >= self.span:  # span here is the kernal size + pooling size!
                                 pre = j
                                 groups[i][-1].append((j, subs[j][0]))
                                 subs[j] = subs[j][1:]
