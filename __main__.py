@@ -380,7 +380,7 @@ print("Num classes: ", num_classes)
 vargs = vars(args)
 
 total_batches_seen = 0
-decay_step = 4000
+decay_step = 40
 resume_ratio = 0
 
 transform = None
@@ -474,6 +474,7 @@ def train(epoch, models, decay=True):
     
     gpu_num = torch.cuda.device_count()
     print('GPU NUM: {:2d}'.format(gpu_num))
+    show = 0
     parallel_models = []
     for model in models:
         model.train()
@@ -497,16 +498,17 @@ def train(epoch, models, decay=True):
                             
         elif args.decay_fir and (total_batches_seen + 1) * args.batch_size % decay_step == 0:
             EmbeddingWithSub.delta = min(EmbeddingWithSub.delta + decay_delta, args.train_delta)
-            print(("delta: {}").format(EmbeddingWithSub.delta))
+            if show % 100 == 0: print(("delta: {}").format(EmbeddingWithSub.delta))
             for model in models:
                 if isinstance(model.ty, goals.DList) and len(model.ty.al) == 2 and decay:
                     for (i, a) in enumerate(model.ty.al):
                         if i == 1:
                             t = Const(min(a[1].getVal() + decay_ratio, args.train_ratio))
-                            print(("ratio: {}").format(str(t)))
+                            if show % 100 == 0: print(("ratio: {}").format(str(t)))
                             model.ty.al[i] = (a[0], t)
                         else:
                             model.ty.al[i] = (a[0], Const(max(a[1].getVal() - decay_ratio, 1 - args.train_ratio)))
+            show += 1
 
         total_batches_seen += 1
         time = float(total_batches_seen) / len(train_loader)
@@ -568,7 +570,7 @@ def train(epoch, models, decay=True):
                     loss = model.aiLoss(*s, time=time, **vargs, parallel=parallel_model).mean(dim=0)
                     lossy += loss.detach().item()
                     loss.backward()
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
                     for p in model.parameters():
                         if not p.requires_grad:
                             continue
