@@ -43,7 +43,7 @@ from exhaustive import *
 from utils import Dict, Multiprocessing, MultiprocessingWithoutPipe
 from DSL.transformations import REGEX, Transformation, INS, tUnion, SUB, DEL, Composition, Union, SWAP, DUP, TransformationIns, TransformationDel
 from DSL.Alphabet import Alphabet
-from dataset.dataset_loader import SSTWordLevel, Glove
+from dataset.dataset_loader import SSTWordLevel, Glove, SSTCharLevel
 
 import math
 
@@ -348,6 +348,8 @@ if args.gpu_id is not None:
 
 if args.dataset == "SST2":
     SSTWordLevel.build()
+elif args.dataset == "SST2char":
+    SSTCharLevel.build()
 
 largest_domain = max([len(h.catStrs(d)) for d in (args.domain)])
 largest_test_domain = max([len(h.catStrs(d)) for d in (args.test_domain)])
@@ -369,7 +371,7 @@ input_dims = train_loader.dataset[0][0].size()
 
 if args.dataset == "AG":
     num_classes = 4
-elif args.dataset == "SST2":
+elif args.dataset in ["SST2", "SST2char"]:
     num_classes = 2
 else:
     num_classes = int(max(getattr(train_loader.dataset, 'train_labels' if args.dataset != "SVHN" else 'labels'))) + 1
@@ -401,6 +403,23 @@ if args.dataset == "AG":
     if args.adv_train > 0 or args.adv_test:
         transform = eval(args.transform)
     pre_set_ratio = args.epoch_ratio
+    
+elif args.dataset == "SST2char":
+    Alphabet.set_char_model()
+    Alphabet.max_len = SSTCharLevel.max_len
+    Alphabet.padding = " "
+    dict_map = SSTCharLevel.dict_map # len(dict_map) = 71
+    Alphabet.set_alphabet(dict_map, np.zeros((71, 150)))
+    keep_same = REGEX(r".*")
+    swap = Transformation(keep_same, SWAP(lambda c: True, lambda c: True), keep_same)
+    sub = Transformation(keep_same,
+                         SUB(lambda c: c in Alphabet.adjacent_keys, lambda c: Alphabet.adjacent_keys[c]),
+                         keep_same)
+    delete = TransformationDel()
+    ins = TransformationIns()
+    if args.adv_train > 0 or args.adv_test:
+        transform = eval(args.transform)
+    pre_set_ratio = args.epoch_ratio
 
 elif args.dataset == "SST2":
     Alphabet.set_word_model()
@@ -422,6 +441,17 @@ elif args.dataset == "SST2":
         transform = eval(args.transform)
     pre_set_ratio = 0.4
 
+if args.dataset in ["AG", "SST2char"]:
+    lines = open("./dataset/en.key").readlines()
+    adjacent_keys = [[] for i in range(len(dict_map))]
+    for line in lines:
+        tmp = line.strip().split()
+        ret = set(tmp[1:]).intersection(dict_map.keys())
+        ids = []
+        for x in ret:
+            ids.append(dict_map[x])
+        adjacent_keys[dict_map[tmp[0]]].extend(ids)
+    S.Info.adjacent_keys = adjacent_keys
         
 if args.decay_fir:
     decay_delta = args.train_delta / (args.epochs * pre_set_ratio * len(train_loader) * args.batch_size / decay_step)

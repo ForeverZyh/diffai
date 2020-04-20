@@ -19,7 +19,7 @@ from forbiddenfruit import curse
 # from torch.autograd import Variable
 
 from timeit import default_timer as timer
-from dataset.dataset_loader import SSTWordLevel
+from dataset.dataset_loader import SSTWordLevel, SSTCharLevel
 
 class Timer:
     def __init__(self, activity=None, units=1, shouldPrint=True, f=None):
@@ -195,7 +195,7 @@ def loadDataset(dataset, batch_size, train, transform=True, val=False):
         oargs['classes'] = 'train' if train else 'test'
     elif dataset in ["Imagenet12"]:
         pass
-    elif dataset in ["AG", "SST2"]:
+    elif dataset in ["AG", "SST2", "SST2char"]:
         pass
     else:
         raise Exception(dataset + " is not yet supported")
@@ -242,13 +242,17 @@ def loadDataset(dataset, batch_size, train, transform=True, val=False):
 
         x = torch.from_numpy(X)
         train_set = torch.utils.data.TensorDataset(x, torch.from_numpy(y))
-    elif dataset in ["SST2"]:
-        if val:
-            X, y = SSTWordLevel.val_X, SSTWordLevel.val_y
-        elif train:
-            X, y = SSTWordLevel.training_X, SSTWordLevel.training_y
+    elif dataset in ["SST2", "SST2char"]:
+        if dataset == "SST2":
+            sst = SSTWordLevel
         else:
-            X, y = SSTWordLevel.test_X, SSTWordLevel.test_y
+            sst = SSTCharLevel
+        if val:
+            X, y = sst.val_X, sst.val_y
+        elif train:
+            X, y = sst.training_X, sst.training_y
+        else:
+            X, y = sst.test_X, sst.test_y
             
         x = torch.from_numpy(X)
         train_set = torch.utils.data.TensorDataset(x, torch.from_numpy(y))
