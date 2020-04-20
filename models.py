@@ -34,7 +34,7 @@ def WordLevelSST2(c, **kargs):
     return n.Seq(n.Embedding(), n.Conv4Embed(100, 5, bias=True), n.AvgPool2D4Embed(5), n.ReduceToZono(), n.FFNN([c], last_lin=True, last_zono=True, **kargs))
 
 def CharLevelAGSub(c, **kargs):
-    return n.Seq(n.EmbeddingWithSub(56, 64), n.Conv4Embed(64, 10, bias=True), n.AvgPool2D4Embed(10), n.ReduceToZono(), n.FFNNDropout([64, 64, c], last_lin=True, last_zono=True, **kargs)) #
+    return n.Seq(n.EmbeddingWithSub(56, 64), n.Conv4Embed(64, 10, bias=True), n.AvgPool2D4Embed(10), n.ReduceToZono(), n.FFNN([64, 64, c], last_lin=True, last_zono=True, **kargs)) #
 ############# New Models
 
 def ResNetTiny(c, **kargs): # resnetWide also used by mixtrain and scaling provable adversarial defenses
