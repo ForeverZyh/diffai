@@ -6,11 +6,11 @@ from utils import swap_pytorch
 from dataset.dataset_loader import SSTWordLevel, Glove
 from nltk import pos_tag
 from DSL.Alphabet import Alphabet
-from diffai.scheduling import Info
+import diffai.scheduling as S
 
 
 def SwapSub(a, b, x, is_numpy=False, batch_size=64):
-    adjacent_keys = Info.adjacent_keys
+    adjacent_keys = S.Info.adjacent_keys
     if not is_numpy:
         x = x.cpu()
         X = []

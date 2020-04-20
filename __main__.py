@@ -451,7 +451,7 @@ if args.dataset in ["AG", "SST2char"]:
         for x in ret:
             ids.append(dict_map[x])
         adjacent_keys[dict_map[tmp[0]]].extend(ids)
-    S.Info.adjacent_keys = adjacent_keys
+    EmbeddingWithSub.adjacent_keys = adjacent_keys
         
 if args.decay_fir:
     decay_delta = args.train_delta / (args.epochs * pre_set_ratio * len(train_loader) * args.batch_size / decay_step)

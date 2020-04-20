@@ -263,7 +263,6 @@ class EmbeddingWithSub(InferModule):
         self.in_shape = in_shape
         self.span = span
         self.embed = nn.Embedding(vocab, dim)
-        self.adjacent_keys = S.Info.adjacent_keys
         subs = [None] * self.in_shape[0]
         self.swaps = []
         all_set = self.in_shape[0] * 2 - 2
