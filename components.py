@@ -506,11 +506,6 @@ class EmbeddingWithSub(InferModule):
                     for p, q in groups[i][j - 1]:
                         x[i][j * self.in_shape[0] + p] = q
             y = self.embed(x.long()).view(-1, 1, self.in_shape[0], self.dim)
-            for id in range(len(y)):
-                item_group_id = id % (groups_consider + 1)
-                item_id = id - item_group_id
-                if item_group_id == 0: continue
-                y[id] = y[id] * EmbeddingWithSub.delta + (1 - EmbeddingWithSub.delta) * y[item_id]
 
             return ai.TaggedDomain(y, tag="magic" + str(groups_consider + 1))
         elif isinstance(x, torch.Tensor):  # it is a Point
@@ -1086,8 +1081,11 @@ def Conv(*args, **kargs):
     return Seq(Conv2D(*args, **kargs), activation(**kargs))
 
 
-def Conv4Embed(*args, **kargs):
-    return Seq(Conv2D4Embed(*args, **kargs), activation(**kargs))
+def Conv4Embed(*args, is_linear=False, **kargs):
+    if is_linear:
+        return Conv2D4Embed(*args, **kargs)
+    else:
+        return Seq(Conv2D4Embed(*args, **kargs), activation(**kargs))
 
 
 def ConvTranspose(*args, **kargs):
@@ -1223,6 +1221,10 @@ class ReduceToZono(InferModule):
             num_e = h.product(x.size())
             view_num = all_possible_sub * h.product(self.in_shape)
             x = x.view(-1, all_possible_sub, *self.in_shape)
+            
+            for i in range(1, all_possible_sub):
+                x[:, i] = x[:, i] * EmbeddingWithSub.delta + (1 - EmbeddingWithSub.delta) * x[:, 0]
+
             if num_e >= view_num and num_e % view_num == 0:  # convert to Box (HybirdZonotope)
                 lower = x.min(1)[0]
                 upper = x.max(1)[0]

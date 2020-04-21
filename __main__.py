@@ -362,6 +362,7 @@ if h.use_cuda:
     torch.cuda.manual_seed(1 + args.seed)
 else:
     torch.manual_seed(args.seed)
+torch.manual_seed(1 + args.seed)
 
 train_loader = h.loadDataset(args.dataset, args.batch_size, True, False)
 val_loader = h.loadDataset(args.dataset, args.batch_size, True, False, True)
@@ -607,6 +608,9 @@ def train(epoch, models, decay=True):
                             continue
                         if p is not None and torch.isnan(p).any():
                             print("Such nan in vals")
+                        if show % 1000 == 0 and p is not None and p.grad is not None:
+                            print(p.data.shape)
+                            print(p.grad.data.mean(), p.grad.data.norm())
                         if p is not None and p.grad is not None and torch.isnan(p.grad).any():
                             print("Such nan in postmagic")
                             stdv = 1 / math.sqrt(h.product(p.data.shape))

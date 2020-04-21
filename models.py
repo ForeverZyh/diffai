@@ -31,13 +31,16 @@ def TruncatedVGG(c, **kargs):
     return n.LeNet([ (64, 3, 3, 1), (64,3,3,1), (128,3,3,2), (128,3,3,1)], [512,c], padding=1, ibp_init = True, bias = True, last_lin = True, last_zono = True, **kargs)
 
 def WordLevelSST2(c, **kargs):
-    return n.Seq(n.Embedding(10), n.Conv4Embed(100, 5, bias=True), n.AvgPool2D4Embed(5), n.ReduceToZono(), n.FFNN([c], last_lin=True, last_zono=True, **kargs))
+    return n.Seq(n.Embedding(5), n.Conv4Embed(100, 5, bias=True, is_linear=True), n.ReduceToZono(), n.Activation(activation="ReLU"), n.AvgPool2D4Embed(5), n.FFNN([c], last_lin=True, last_zono=True, **kargs))
 
 def CharLevelSST2Sub(c, **kargs):
-    return n.Seq(n.EmbeddingWithSub(71, 150, 10), n.Conv4Embed(100, 5, bias=True), n.AvgPool2D4Embed(5), n.ReduceToZono(), n.FFNN([c], last_lin=True, last_zono=True, **kargs))
+    return n.Seq(n.EmbeddingWithSub(71, 150, 5), n.Conv4Embed(100, 5, bias=True, is_linear=True), n.ReduceToZono(), n.Activation(activation="ReLU"), n.AvgPool2D4Embed(5), n.FFNN([c], last_lin=True, last_zono=True, **kargs))
+
+def Deepmind(c, **kargs):
+    return n.Seq(n.EmbeddingWithSub(71, 150, 5), n.Conv4Embed(100, 5, bias=True, is_linear=True), n.ReduceToZono(), n.Activation(activation="ReLU"), n.AvgPool2D4Embed(5), n.FFNN([c], last_lin=True, last_zono=True, **kargs))
 
 def CharLevelAGSub(c, **kargs):
-    return n.Seq(n.EmbeddingWithSub(56, 64, 20), n.Conv4Embed(64, 10, bias=True), n.AvgPool2D4Embed(10), n.ReduceToZono(), n.FFNN([64, 64, c], last_lin=True, last_zono=True, **kargs)) #
+    return n.Seq(n.EmbeddingWithSub(56, 64, 10), n.Conv4Embed(64, 10, bias=True, is_linear=True), n.ReduceToZono(), n.Activation(activation="ReLU"), n.AvgPool2D4Embed(10), n.FFNN([64, 64, c], last_lin=True, last_zono=True, **kargs)) #
 ############# New Models
 
 def ResNetTiny(c, **kargs): # resnetWide also used by mixtrain and scaling provable adversarial defenses
