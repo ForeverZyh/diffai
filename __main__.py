@@ -40,7 +40,7 @@ from scheduling import *
 
 from exhaustive import *
 
-from utils import Dict, Multiprocessing, MultiprocessingWithoutPipe
+from utils import Dict, Multiprocessing, MultiprocessingWithoutPipe, compute_adjacent_keys
 from DSL.transformations import REGEX, Transformation, INS, tUnion, SUB, DEL, Composition, Union, SWAP, DUP, TransformationIns, TransformationDel
 from DSL.Alphabet import Alphabet
 from dataset.dataset_loader import SSTWordLevel, Glove, SSTCharLevel
@@ -363,6 +363,8 @@ if h.use_cuda:
 else:
     torch.manual_seed(args.seed)
 torch.manual_seed(1 + args.seed)
+torch.cuda.manual_seed(2 + args.seed)
+torch.cuda.manual_seed_all(2 + args.seed)
 
 train_loader = h.loadDataset(args.dataset, args.batch_size, True, False)
 val_loader = h.loadDataset(args.dataset, args.batch_size, True, False, True)
@@ -443,15 +445,7 @@ elif args.dataset == "SST2":
     pre_set_ratio = 0.4
 
 if args.dataset in ["AG", "SST2char"]:
-    lines = open("./dataset/en.key").readlines()
-    adjacent_keys = [[] for i in range(len(dict_map))]
-    for line in lines:
-        tmp = line.strip().split()
-        ret = set(tmp[1:]).intersection(dict_map.keys())
-        ids = []
-        for x in ret:
-            ids.append(dict_map[x])
-        adjacent_keys[dict_map[tmp[0]]].extend(ids)
+    adjacent_keys = compute_adjacent_keys(dict_map)
     EmbeddingWithSub.adjacent_keys = adjacent_keys
     S.Info.adjacent_keys = adjacent_keys
         
@@ -506,7 +500,7 @@ def train(epoch, models, decay=True):
     
     gpu_num = torch.cuda.device_count()
     print('GPU NUM: {:2d}'.format(gpu_num))
-    show = 0
+    show = 1
     parallel_models = []
     for model in models:
         model.train()

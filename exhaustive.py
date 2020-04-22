@@ -59,6 +59,7 @@ def SwapSub(a, b, x, is_numpy=False, batch_size=64):
 
 
 def DelDupSubChar(a, b, c, x, is_numpy=False, batch_size=64, padding_id=0):
+    adjacent_keys = S.Info.adjacent_keys
     if not is_numpy:
         x = x.cpu()
         X = []
