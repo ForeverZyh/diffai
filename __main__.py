@@ -561,6 +561,14 @@ def train(epoch, models, decay=True):
                             flag = True
                             break
                     assert flag
+                if args.dataset == "SST2char":
+                    flag = False
+                    for p in model.parameters():
+                        if list(p.shape) == [71, 150]:
+                            Alphabet.embedding = p.data.cpu().numpy()
+                            flag = True
+                            break
+                    assert flag
                 data = adv_batch(data, target)
                 target = target.unsqueeze(-1).repeat((1, args.adv_train + 1)).view(-1)
             elif args.e_train > 0:
