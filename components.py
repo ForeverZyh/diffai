@@ -507,6 +507,12 @@ class EmbeddingWithSub(InferModule):
                         x[i][j * self.in_shape[0] + p] = q
             y = self.embed(x.long()).view(-1, 1, self.in_shape[0], self.dim)
 
+            for id in range(len(y)):
+                item_group_id = id % (groups_consider + 1)
+                item_id = id - item_group_id
+                if item_group_id == 0: continue
+                y[id] = y[id] * EmbeddingWithSub.delta + (1 - EmbeddingWithSub.delta) * y[item_id]
+
             return ai.TaggedDomain(y, tag="magic" + str(groups_consider + 1))
         elif isinstance(x, torch.Tensor):  # it is a Point
             y = self.embed(x.long()).view(-1, 1, self.in_shape[0], self.dim)
@@ -1222,8 +1228,8 @@ class ReduceToZono(InferModule):
             view_num = all_possible_sub * h.product(self.in_shape)
             x = x.view(-1, all_possible_sub, *self.in_shape)
             
-            for i in range(1, all_possible_sub):
-                x[:, i] = x[:, i] * EmbeddingWithSub.delta + (1 - EmbeddingWithSub.delta) * x[:, 0]
+            #for i in range(1, all_possible_sub):
+            #    x[:, i] = x[:, i] * EmbeddingWithSub.delta + (1 - EmbeddingWithSub.delta) * x[:, 0]
 
             if num_e >= view_num and num_e % view_num == 0:  # convert to Box (HybirdZonotope)
                 lower = x.min(1)[0]
