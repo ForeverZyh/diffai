@@ -571,6 +571,17 @@ def train(epoch, models, decay=True):
                     assert flag
                 data = adv_batch(data, target)
                 target = target.unsqueeze(-1).repeat((1, args.adv_train + 1)).view(-1)
+                with torch.no_grad():
+                    loss = model.aiLoss(data, target, **vargs, parallel=parallel_model)
+                ids = []
+                for i in range(len(loss)):
+                    if i % (args.adv_train + 1) == 0 or loss[i] > loss[i // (args.adv_train + 1) * (args.adv_train + 1)]: # if find worse adv examples
+                        ids.append(i)                            
+                ids = torch.Tensor(ids).cuda().long()
+                data = torch.index_select(data, 0, ids)
+                if show % 1000 == 0: print(len(data))
+                target = torch.index_select(target, 0 ,ids)
+                #print(target)
             elif args.e_train > 0:
                 model.eval()
                 with torch.no_grad():
