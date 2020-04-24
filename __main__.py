@@ -752,6 +752,14 @@ def test(models, epoch, f=None):
                             flag = True
                             break
                     assert flag
+                if args.dataset == "SST2char":
+                    flag = False
+                    for p in m.model.parameters():
+                        if list(p.shape) == [71, 150]:
+                            Alphabet.embedding = p.data.cpu().numpy()
+                            flag = True
+                            break
+                    assert flag
                 data = adv_batch(data.long(), target)
 
             with torch.no_grad():
