@@ -452,7 +452,7 @@ if args.dataset in ["AG", "SST2char"]:
 if args.decay_fir:
     decay_delta = args.train_delta / (args.epochs * pre_set_ratio * len(train_loader) * args.batch_size / decay_step)
     decay_ratio = args.train_ratio / (args.epochs * pre_set_ratio * len(train_loader) * args.batch_size / decay_step)
-    if args.dataset == "SST2":
+    if args.dataset == "SST2" or args.dataset == "SST2char":
         EmbeddingWithSub.delta = args.train_delta
     else:
         EmbeddingWithSub.delta = decay_delta * (args.resume_epoch * len(train_loader) * args.batch_size / decay_step)
