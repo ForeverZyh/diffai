@@ -257,6 +257,7 @@ class Embedding(InferModule):
 
 class EmbeddingWithSub(InferModule):
     delta = 0
+    truncate = None
     def init(self, in_shape, vocab, dim, span, **kargs):
         self.vocab = vocab
         self.dim = dim
@@ -479,6 +480,8 @@ class EmbeddingWithSub(InferModule):
                 all_set = 0
                 subs = [[] for _ in range(len(data))]
                 for (j, s) in enumerate(data):
+                    if EmbeddingWithSub.truncate is not None and EmbeddingWithSub.truncate <= j:
+                        break
                     if j not in swaps:
                         s = int(s)
                         subs[j] = self.adjacent_keys[s]

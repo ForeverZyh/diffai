@@ -341,6 +341,7 @@ parser.add_argument('--transform', type=str, default=None, help='transformation 
 parser.add_argument('-r', '--regularize', type=float, default=None, help='use regularization')
 parser.add_argument("--gpu_id", type=str, default=None, help="specify gpu id, None for all")
 parser.add_argument("--decay-fir", type=bool, default=False, help="decay the first Mix domain")
+parser.add_argument("--truncate", type=int, default=None, help="truncate length for char model")
 
 args = parser.parse_args()
 if args.gpu_id is not None:
@@ -397,12 +398,14 @@ if args.dataset == "AG":
     dict_map = dict(np.load("./dataset/AG/dict_map.npy").item())
     Alphabet.set_alphabet(dict_map, np.zeros((56, 64)))
     keep_same = REGEX(r".*")
-    swap = Transformation(keep_same, SWAP(lambda c: True, lambda c: True), keep_same)
+    # only support in char model
+    swap = Transformation(keep_same, SWAP(lambda c: True, lambda c: True), keep_same, truncate=args.truncate)
     sub = Transformation(keep_same,
                          SUB(lambda c: c in Alphabet.adjacent_keys, lambda c: Alphabet.adjacent_keys[c]),
-                         keep_same)
-    delete = TransformationDel()
-    ins = TransformationIns()
+                         keep_same,
+                         truncate=args.truncate)
+    delete = TransformationDel(truncate=args.truncate)
+    ins = TransformationIns(truncate=args.truncate)
     if args.adv_train > 0 or args.adv_test:
         transform = eval(args.transform)
     pre_set_ratio = args.epoch_ratio
@@ -414,12 +417,13 @@ elif args.dataset == "SST2char":
     dict_map = SSTCharLevel.dict_map # len(dict_map) = 71
     Alphabet.set_alphabet(dict_map, np.zeros((71, 150)))
     keep_same = REGEX(r".*")
-    swap = Transformation(keep_same, SWAP(lambda c: True, lambda c: True), keep_same)
+    swap = Transformation(keep_same, SWAP(lambda c: True, lambda c: True), keep_same, truncate=args.truncate)
     sub = Transformation(keep_same,
                          SUB(lambda c: c in Alphabet.adjacent_keys, lambda c: Alphabet.adjacent_keys[c]),
-                         keep_same)
-    delete = TransformationDel()
-    ins = TransformationIns()
+                         keep_same,
+                         truncate=args.truncate)
+    delete = TransformationDel(truncate=args.truncate)
+    ins = TransformationIns(truncate=args.truncate)
     if args.adv_train > 0 or args.adv_test:
         transform = eval(args.transform)
     pre_set_ratio = args.epoch_ratio
@@ -452,7 +456,7 @@ if args.dataset in ["AG", "SST2char"]:
 if args.decay_fir:
     decay_delta = args.train_delta / (args.epochs * pre_set_ratio * len(train_loader) * args.batch_size / decay_step)
     decay_ratio = args.train_ratio / (args.epochs * pre_set_ratio * len(train_loader) * args.batch_size / decay_step)
-    if args.dataset == "SST2":
+    if args.dataset == "SST2" or True:
         EmbeddingWithSub.delta = args.train_delta
     else:
         EmbeddingWithSub.delta = decay_delta * (args.resume_epoch * len(train_loader) * args.batch_size / decay_step)
@@ -461,6 +465,7 @@ else:
     decay_delta = 0
     decay_ratio = 0
     EmbeddingWithSub.delta = args.train_delta
+EmbeddingWithSub.truncate = args.truncate
 
     
 # generate adv attack examples
