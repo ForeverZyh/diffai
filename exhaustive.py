@@ -9,7 +9,7 @@ from DSL.Alphabet import Alphabet
 import diffai.scheduling as S
 
 
-def SwapSub(a, b, x, is_numpy=False, batch_size=64):
+def SwapSub(a, b, x, is_numpy=False, batch_size=64, truncate=None):
     adjacent_keys = S.Info.adjacent_keys
     if not is_numpy:
         x = x.cpu()
@@ -17,7 +17,11 @@ def SwapSub(a, b, x, is_numpy=False, batch_size=64):
     else:
         X = np.tile(np.expand_dims(x, 0), (batch_size, 1))
         current_id = 0
-    valid_swap_poss = [i for i in range(len(x) - 1) if int(x[i]) != int(x[i + 1])]
+    if truncate is None:
+        truncated_len = len(x)
+    else:
+        truncated_len = truncate
+    valid_swap_poss = [i for i in range(truncated_len - 1) if int(x[i]) != int(x[i + 1])]
     for swap in range(a, -1, -1):
         for swap_poss in itertools.combinations(tuple(valid_swap_poss), swap):
             # precheck whether overlape
@@ -27,7 +31,7 @@ def SwapSub(a, b, x, is_numpy=False, batch_size=64):
                     overlape = True
             if overlape:
                 continue
-            valid_sub_poss = [i for i in range(len(x)) if (i not in swap_poss) and (i - 1 not in swap_poss) and len(adjacent_keys[int(x[i])]) > 0]
+            valid_sub_poss = [i for i in range(truncated_len) if (i not in swap_poss) and (i - 1 not in swap_poss) and len(adjacent_keys[int(x[i])]) > 0]
             for sub in range(b, -1, -1):
                 for sub_poss in itertools.combinations(tuple(valid_sub_poss), sub):
                     if is_numpy:
@@ -58,7 +62,7 @@ def SwapSub(a, b, x, is_numpy=False, batch_size=64):
             yield torch.cat(X, 0).cuda()
 
 
-def DelDupSubChar(a, b, c, x, is_numpy=False, batch_size=64, padding_id=0):
+def DelDupSubChar(a, b, c, x, is_numpy=False, batch_size=64, padding_id=0, truncate=None):
     adjacent_keys = S.Info.adjacent_keys
     if not is_numpy:
         x = x.cpu()
@@ -69,8 +73,11 @@ def DelDupSubChar(a, b, c, x, is_numpy=False, batch_size=64, padding_id=0):
     end_pos = len(x)
     while end_pos > 0 and int(x[end_pos - 1]) == padding_id:
         end_pos -= 1
-        
-    valid_sub_poss = [i for i in range(end_pos) if len(adjacent_keys[int(x[i])]) > 0]
+    if truncate is None:
+        truncated_len = end_pos
+    else:
+        truncated_len = min(end_pos, truncate)
+    valid_sub_poss = [i for i in range(truncated_len) if len(adjacent_keys[int(x[i])]) > 0]
     for sub in range(c, -1, -1):
         for sub_poss in itertools.combinations(tuple(valid_sub_poss), sub):
             sub_pos_strs = []
@@ -83,10 +90,10 @@ def DelDupSubChar(a, b, c, x, is_numpy=False, batch_size=64, padding_id=0):
                     x3 = x.clone()
                 for i, sub_pos in enumerate(sub_poss):
                     x3[sub_pos] = sub_pos_str[i]
-                valid_dup_poss = [i for i in range(end_pos) if i not in sub_poss and len(adjacent_keys[int(x[i])]) > 0]
+                valid_dup_poss = [i for i in range(truncated_len) if i not in sub_poss and len(adjacent_keys[int(x[i])]) > 0]
                 for dup in range(b, -1, -1):
                     for dup_poss in itertools.combinations(tuple(valid_dup_poss), dup):
-                        valid_del_poss = [i for i in range(end_pos) if (i not in dup_poss) and (i not in sub_poss)]
+                        valid_del_poss = [i for i in range(truncated_len) if (i not in dup_poss) and (i not in sub_poss)]
                         for delete in range(a, -1, -1):
                             for del_poss in itertools.combinations(tuple(valid_del_poss), delete):
                                 if is_numpy:
