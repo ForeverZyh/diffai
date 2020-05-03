@@ -329,6 +329,7 @@ parser.add_argument('--write-first', type=h.str2bool, nargs='?', const=True, def
                     help='write the initial net.  Useful for comparing algorithms, a pain for testing.')
 parser.add_argument('--test-size', type=int, default=2000, help='number of examples to test with')
 parser.add_argument('--test-func', type=str, default=None, help='exhaustive test function')
+parser.add_argument('--test-slice', type=str, default="slice(None)", help='the slice of the test dataset, default all')
 parser.add_argument('--train-delta', type=int, default=None, help='train the number of delta in each sentence')
 parser.add_argument('--train-ratio', type=float, default=0.75, help='train ratio of the abstract loss')
 parser.add_argument('--adv-train', type=int, default=0, help='adv training combined abstract training')
@@ -369,7 +370,7 @@ torch.cuda.manual_seed_all(2 + args.seed)
 
 train_loader = h.loadDataset(args.dataset, args.batch_size, True, False)
 val_loader = h.loadDataset(args.dataset, args.batch_size, True, False, True)
-test_loader = h.loadDataset(args.dataset, args.test_batch_size, False, False)
+test_loader = h.loadDataset(args.dataset, args.test_batch_size, False, False, test_slice=eval(args.test_slice))
 
 input_dims = train_loader.dataset[0][0].size()
 
