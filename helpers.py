@@ -258,6 +258,10 @@ def loadDataset(dataset, batch_size, train, transform=True, val=False, test_slic
         else:
             X, y = sst.test_X, sst.test_y
             
+        if test_slice is not None:
+            X = X[test_slice]
+            y = y[test_slice]
+            
         x = torch.from_numpy(X)
         train_set = torch.utils.data.TensorDataset(x, torch.from_numpy(y))
     else:
