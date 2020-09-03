@@ -33,6 +33,9 @@ def TruncatedVGG(c, **kargs):
 def WordLevelSST2(c, **kargs):
     return n.Seq(n.Embedding(10), n.Conv4Embed(100, 5, bias=True), n.AvgPool2D4Embed(5), n.ReduceToZono(), n.FFNN([c], last_lin=True, last_zono=True, **kargs))
 
+def WordLevelSST2WithLinear(c, **kargs):
+    return n.Seq(n.Embedding(10), n.Conv4Embed(100, 1, bias=True), n.Conv4Embed(100, 5, bias=True), n.AvgPool2D4Embed(5), n.ReduceToZono(), n.FFNN([c], last_lin=True, last_zono=True, **kargs))
+
 def CharLevelSST2Sub(c, **kargs):
     return n.Seq(n.EmbeddingWithSub(71, 150, 10), n.Conv4Embed(100, 5, bias=True), n.AvgPool2D4Embed(5), n.ReduceToZono(), n.FFNN([c], last_lin=True, last_zono=True, **kargs))
 

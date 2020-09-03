@@ -166,10 +166,92 @@ class Embedding(InferModule):
         self.embed = nn.Embedding(self.vocab, self.dim)
         self.embed.weight.data.copy_(torch.from_numpy(Glove.embedding))
         self.embed.weight.requires_grad = False
+        self.stop_words = set([Glove.str2id[x] for x in ["a", "and", "the", "of", "to"]])
         
         return [1, in_shape[0], self.dim]
 
     def forward(self, x, **kargs):
+        def LabeledDomain(x, **kwargs):
+            def get_swaped(d):
+                t = np.zeros(d)
+                while len(np.unique(t)) != d:
+                    t = np.random.randint(0, len(self.swaps), d)
+                ys = []
+                for i in range(d):
+                    y1 = y.clone()
+                    for (p, q) in self.swaps[t[i]]:
+                        swap_pytorch(y1, (slice(None), slice(None), p, slice(None)), (slice(None), slice(None), q, slice(None)))    #y1[:, :, p, :], y1[:, :, q, :]
+                    ys.append(y1)
+                return ys
+            def get_swaped_x(d):
+                t = np.zeros(d)
+                while len(np.unique(t)) != d:
+                    t = np.random.randint(0, len(self.swaps), d)
+                xs = [self.forward(ai.TaggedDomain(ai.HybridZonotope(xc, 0, None), g.HBox(0)), sample_num=6)]
+                for i in range(d):
+                    x1 = xc.clone()
+                    for (p, q) in self.swaps[t[i]]:
+                        swap_pytorch(x1, (slice(None), p), (slice(None), q))    #x1[:, p], x1[:, q]
+                    xs.append(self.forward(ai.TaggedDomain(ai.HybridZonotope(x1, 0, None), g.HBox(0)), sample_num=6, swaps=[p, q]))
+                return xs
+
+            xc = x.center()
+            y = self.embed(xc.long()).view(-1, 1, self.in_shape[0], self.dim)
+            # y = kargs["y"]
+            if x.label[-len("DelSub"):] == "DelSub":
+                a, b = [int(c) for c in x.label[:-len("DelSub")].split()]
+                x = xc.vanillaTensorPart().long()
+                groups = [[] for _ in range(len(x))]
+                for i, data in enumerate(x):
+                    input_str = Alphabet.to_string(data, True)
+                    input_pos_tag = pos_tag(input_str)
+                    subs = [[] for _ in range(len(data))]
+                    stop_words_encountered = 0
+                    all_set = 0
+                    for (j, s) in enumerate(data):
+                        s = int(s)
+                        if s in SSTWordLevel.synonym_dict_id:
+                            for k in range(len(SSTWordLevel.synonym_dict_id[s])):
+                                if SSTWordLevel.synonym_dict_pos_tag[s][k] == input_pos_tag[j][1]:
+                                    subs[j].append(SSTWordLevel.synonym_dict_id[s][k])
+                        all_set += len(subs[j])
+                        if s in self.stop_words:
+                            stop_words_encountered += 1
+                        for k in range(1, min(stop_words_encountered, b) + 1):
+                            if k + j < len(data):
+                                subs[j].append(int(data[j + k]))
+                                all_set += 1
+
+                    while all_set > 0:
+                        pre = -self.in_shape[0]
+                        groups[i].append([])
+                        for j in range(len(subs)):
+                            if j - pre >= self.span:  # span here is the kernal size + pooling size!
+                                if len(subs[j]) > 0:
+                                    pre = j
+                                    groups[i][-1].append((j, subs[j][0]))
+                                    subs[j] = subs[j][1:]
+                                    all_set -= 1
+
+                groups_consider = 0
+                for t in groups:
+                    groups_consider = max(groups_consider, len(t))   
+                x = x.repeat((1, groups_consider + 1))
+                for i in range(len(x)):
+                    for j in range(1, min(groups_consider, len(groups[i])) + 1):
+                        for p, q in groups[i][j - 1]:
+                            x[i][j * self.in_shape[0] + p] = q
+                y = self.embed(x.long()).view(-1, 1, self.in_shape[0], self.dim)
+                for id in range(len(y)):
+                    item_group_id = id % (groups_consider + 1)
+                    item_id = id - item_group_id
+                    if item_group_id == 0: continue
+                    y[id] = y[id] * EmbeddingWithSub.delta * (a + b) + (1 - EmbeddingWithSub.delta * (a + b)) * y[item_id]
+
+                return ai.TaggedDomain(y, tag="magic" + str(groups_consider + 1))
+            else:
+                raise NotImplementedError()
+                
         if isinstance(x, ai.LabeledDomain):
             return LabeledDomain(x, **kargs)
         elif isinstance(x, ai.TaggedDomain):
