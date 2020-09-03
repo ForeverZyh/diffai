@@ -342,6 +342,7 @@ parser.add_argument('--transform', type=str, default=None, help='transformation 
 parser.add_argument('-r', '--regularize', type=float, default=None, help='use regularization')
 parser.add_argument("--gpu_id", type=str, default=None, help="specify gpu id, None for all")
 parser.add_argument("--decay-fir", type=bool, default=False, help="decay the first Mix domain")
+parser.add_argument("--decay-delta", type=bool, default=False, help="decay the delta")
 parser.add_argument("--truncate", type=int, default=None, help="truncate length for char model")
 
 args = parser.parse_args()
@@ -457,7 +458,7 @@ if args.dataset in ["AG", "SST2char"]:
 if args.decay_fir:
     decay_delta = args.train_delta / (args.epochs * pre_set_ratio * len(train_loader) * args.batch_size / decay_step)
     decay_ratio = args.train_ratio / (args.epochs * pre_set_ratio * len(train_loader) * args.batch_size / decay_step)
-    if args.dataset == "SST2" or True:
+    if not args.decay_delta:
         EmbeddingWithSub.delta = args.train_delta
     else:
         EmbeddingWithSub.delta = decay_delta * (args.resume_epoch * len(train_loader) * args.batch_size / decay_step)
@@ -466,6 +467,7 @@ else:
     decay_delta = 0
     decay_ratio = 0
     EmbeddingWithSub.delta = args.train_delta
+current_ratio = 0
 EmbeddingWithSub.truncate = args.truncate
 
     
@@ -503,6 +505,7 @@ def partial_to_loss(model, x, y):
 def train(epoch, models, decay=True):
     global total_batches_seen
     global transform
+    global current_ratio
     
     gpu_num = torch.cuda.device_count()
     print('GPU NUM: {:2d}'.format(gpu_num))
@@ -521,8 +524,9 @@ def train(epoch, models, decay=True):
             for model in models:
                 if isinstance(model.ty, goals.DList) and len(model.ty.al) == 2 and decay:
                     for (i, a) in enumerate(model.ty.al):
-                        if i == 1:
-                            t = Const(min(a[1].getVal() + resume_ratio, args.train_ratio))
+                        if not isinstance(a[0], Point):
+                            current_ratio = min(a[i].getVal() + resume_ratio, args.train_ratio)
+                            t = Const(current_ratio)
                             print(("ratio: {}").format(str(t)))
                             model.ty.al[i] = (a[0], t)
                         else:
@@ -534,8 +538,9 @@ def train(epoch, models, decay=True):
             for model in models:
                 if isinstance(model.ty, goals.DList) and len(model.ty.al) == 2 and decay:
                     for (i, a) in enumerate(model.ty.al):
-                        if i == 1:
-                            t = Const(min(a[1].getVal() + decay_ratio, args.train_ratio))
+                        if not isinstance(a[0], Point):
+                            current_ratio = min(a[i].getVal() + decay_ratio, args.train_ratio)
+                            t = Const(current_ratio)
                             if show % 100 == 0: print(("ratio: {}").format(str(t)))
                             model.ty.al[i] = (a[0], t)
                         else:
@@ -665,7 +670,9 @@ def train(epoch, models, decay=True):
                     batch_idx * len(data) // (args.adv_train + 1), len(train_loader.dataset), 100. * batch_idx / len(train_loader),
                     model.speed,
                     lossy))
-
+    
+    tmp_delta = EmbeddingWithSub.delta
+    EmbeddingWithSub.delta = args.train_delta
     val = 0
     val_origin = 0
     batch_cnt = 0
@@ -689,6 +696,9 @@ def train(epoch, models, decay=True):
 
                 loss = model.aiLoss(data, target, **vargs, parallel=parallel_model).mean(dim=0)
                 val_origin += loss
+                
+    EmbeddingWithSub.delta = tmp_delta
+    val = (val - val_origin * (1 - current_ratio)) / current_ratio * args.train_ratio + val_origin * (1 - args.train_ratio)
 
     return val_origin / batch_cnt, val / batch_cnt
 
@@ -697,6 +707,8 @@ num_tests = 0
 
 
 def test(models, epoch, f=None):
+    tmp_delta = EmbeddingWithSub.delta
+    EmbeddingWithSub.delta = args.train_delta
     global num_tests
     global transform
     num_tests += 1
@@ -887,6 +899,8 @@ def test(models, epoch, f=None):
                     print(decimal.Decimal(float(t)).__format__("f"), file=imgfile)
             with open(img_file + ".class", "w") as imgfile:
                 print(int(target.item()), file=imgfile)
+    
+    EmbeddingWithSub.delta = tmp_delta
 
 
 def createModel(net, domain, domain_name):
