@@ -172,29 +172,6 @@ class Embedding(InferModule):
 
     def forward(self, x, **kargs):
         def LabeledDomain(x, **kwargs):
-            def get_swaped(d):
-                t = np.zeros(d)
-                while len(np.unique(t)) != d:
-                    t = np.random.randint(0, len(self.swaps), d)
-                ys = []
-                for i in range(d):
-                    y1 = y.clone()
-                    for (p, q) in self.swaps[t[i]]:
-                        swap_pytorch(y1, (slice(None), slice(None), p, slice(None)), (slice(None), slice(None), q, slice(None)))    #y1[:, :, p, :], y1[:, :, q, :]
-                    ys.append(y1)
-                return ys
-            def get_swaped_x(d):
-                t = np.zeros(d)
-                while len(np.unique(t)) != d:
-                    t = np.random.randint(0, len(self.swaps), d)
-                xs = [self.forward(ai.TaggedDomain(ai.HybridZonotope(xc, 0, None), g.HBox(0)), sample_num=6)]
-                for i in range(d):
-                    x1 = xc.clone()
-                    for (p, q) in self.swaps[t[i]]:
-                        swap_pytorch(x1, (slice(None), p), (slice(None), q))    #x1[:, p], x1[:, q]
-                    xs.append(self.forward(ai.TaggedDomain(ai.HybridZonotope(x1, 0, None), g.HBox(0)), sample_num=6, swaps=[p, q]))
-                return xs
-
             xc = x.center()
             y = self.embed(xc.long()).view(-1, 1, self.in_shape[0], self.dim)
             # y = kargs["y"]
@@ -202,25 +179,34 @@ class Embedding(InferModule):
                 a, b = [int(c) for c in x.label[:-len("DelSub")].split()]
                 x = xc.vanillaTensorPart().long()
                 groups = [[] for _ in range(len(x))]
+                lb = self.embed(x.long()).view(-1, 1, self.in_shape[0], self.dim)
+                ub = self.embed(x.long()).view(-1, 1, self.in_shape[0], self.dim)
                 for i, data in enumerate(x):
                     input_str = Alphabet.to_string(data, True)
                     input_pos_tag = pos_tag(input_str)
                     subs = [[] for _ in range(len(data))]
                     stop_words_encountered = 0
                     all_set = 0
-                    for (j, s) in enumerate(data):
-                        s = int(s)
-                        if s in SSTWordLevel.synonym_dict_id:
-                            for k in range(len(SSTWordLevel.synonym_dict_id[s])):
-                                if SSTWordLevel.synonym_dict_pos_tag[s][k] == input_pos_tag[j][1]:
-                                    subs[j].append(SSTWordLevel.synonym_dict_id[s][k])
-                        all_set += len(subs[j])
-                        if s in self.stop_words:
+                    for (j, s_) in enumerate(data):
+                        s_ = int(s_)
+                        if s_ in self.stop_words:
                             stop_words_encountered += 1
-                        for k in range(1, min(stop_words_encountered, b) + 1):
-                            if k + j < len(data):
-                                subs[j].append(int(data[j + k]))
-                                all_set += 1
+                        
+                        for k in range(0, min(stop_words_encountered, b) + 1):  # start from cur
+                            if k + j >= len(data): break
+                            s = int(data[k + j])
+                            if s in SSTWordLevel.synonym_dict_id:
+                                for k in range(len(SSTWordLevel.synonym_dict_id[s])):
+                                    if SSTWordLevel.synonym_dict_pos_tag[s][k] == input_pos_tag[j][1]:
+                                        subs[j].append(SSTWordLevel.synonym_dict_id[s][k])
+                                        
+                        all_set += len(subs[j])
+                        # make a Box for deletion
+                        for k in range(1, min(stop_words_encountered, b) + 1): # start from next
+                            if k + j >= len(data): break
+                            lb[i, 0, j] = torch.min(lb[i, 0, j], lb[i, 0, k + j])
+                            ub[i, 0, j] = torch.max(ub[i, 0, j], ub[i, 0, k + j])
+                                
 
                     while all_set > 0:
                         pre = -self.in_shape[0]
@@ -237,6 +223,8 @@ class Embedding(InferModule):
                 for t in groups:
                     groups_consider = max(groups_consider, len(t))   
                 x = x.repeat((1, groups_consider + 1))
+                lb = lb.repeat((1, groups_consider + 1, 1, 1)).view(-1, 1, self.in_shape[0], self.dim)
+                ub = ub.repeat((1, groups_consider + 1, 1, 1)).view(-1, 1, self.in_shape[0], self.dim)
                 for i in range(len(x)):
                     for j in range(1, min(groups_consider, len(groups[i])) + 1):
                         for p, q in groups[i][j - 1]:
@@ -245,10 +233,15 @@ class Embedding(InferModule):
                 for id in range(len(y)):
                     item_group_id = id % (groups_consider + 1)
                     item_id = id - item_group_id
-                    if item_group_id == 0: continue
-                    y[id] = y[id] * EmbeddingWithSub.delta * (a + b) + (1 - EmbeddingWithSub.delta * (a + b)) * y[item_id]
-
-                return ai.TaggedDomain(y, tag="magic" + str(groups_consider + 1))
+                    if item_group_id == 0: 
+                        continue
+                    y[id] = (y[id] - y[item_id]) * EmbeddingWithSub.delta * a
+                
+                for id in range(0, len(y), groups_consider + 1):
+                    y[id] = torch.zeros_like(y[id])
+                
+#                 print(lb.shape, y.unsqueeze(0).shape)
+                return ai.TaggedDomain(ai.HybridZonotope((lb + ub) / 2, (ub - lb) / 2 * EmbeddingWithSub.delta, y.unsqueeze(0)), tag="del_magic" + str(groups_consider + 1))
             else:
                 raise NotImplementedError()
                 
@@ -1322,6 +1315,22 @@ class ReduceToZono(InferModule):
                 return ai.HybridZonotope((lower + upper) / 2, (upper - lower) / 2, None)
             else:  # if it is a Point()
                 assert False
+        
+        def get_reduced_zonotope(x, all_possible_sub):
+            num_e = h.product(x.size())
+            view_num = all_possible_sub * h.product(self.in_shape)
+            x = x.view(-1, all_possible_sub, *self.in_shape)
+            
+            #for i in range(1, all_possible_sub):
+            #    x[:, i] = x[:, i] * EmbeddingWithSub.delta + (1 - EmbeddingWithSub.delta) * x[:, 0]
+
+            if num_e >= view_num and num_e % view_num == 0:  # convert to Box (HybirdZonotope)
+                x = x.dummyDecorrelate(1)
+                lower = (x.head - x.beta).min(1)[0]
+                upper = (x.head + x.beta).max(1)[0]
+                return ai.HybridZonotope((lower + upper) / 2, (upper - lower) / 2, None)
+            else:  # if it is a Point()
+                assert False
 
         if isinstance(x, ai.ListDomain):
             for (i, a) in enumerate(x.al):
@@ -1329,6 +1338,8 @@ class ReduceToZono(InferModule):
             return x
         elif isinstance(x, ai.TaggedDomain) and isinstance(x.tag, str) and x.tag[:5] == "magic":
             return get_reduced(x.a, int(x.tag[5:]))
+        elif isinstance(x, ai.TaggedDomain) and isinstance(x.tag, str) and x.tag[:len("del_magic")] == "del_magic":
+            return get_reduced_zonotope(x.a, int(x.tag[len("del_magic"):]))
         elif isinstance(x, ai.TaggedDomain):
             return ai.TaggedDomain(self.forward(x.a), x.tag)
         elif isinstance(x, torch.Tensor):
